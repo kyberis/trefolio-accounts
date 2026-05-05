@@ -1,8 +1,13 @@
 import { redirect } from "next/navigation";
+import bcrypt from "bcryptjs";
+import { AppIcon, Brand, PageFooter, appKeyFromHint } from "@/components/Brand";
 import { findClient, newAuthCode } from "@/lib/oidc";
 import { findUserByEmail, saveAuthCode, createUser } from "@/lib/db";
+import { getPublicIssuer } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
+
+const isProd = process.env.NODE_ENV === "production";
 
 interface SP {
   client_id?: string;
@@ -39,20 +44,33 @@ async function handleSubmit(formData: FormData) {
     redirect(`/oauth2/authorize?error=invalid_client`);
   }
 
-  let user = findUserByEmail(email);
+  let user = await findUserByEmail(email);
   if (!user) {
     if (intent !== "signup") {
       const usp = new URLSearchParams({ ...(params as any), error: "invalid_credentials" });
       redirect(`/oauth2/authorize?${usp.toString()}`);
     }
-    user = { ...createUser({ email, name: name || email.split("@")[0], password }), password_plain: password };
-  } else if (user.password_plain !== password) {
-    const usp = new URLSearchParams({ ...(params as any), error: "invalid_credentials" });
-    redirect(`/oauth2/authorize?${usp.toString()}`);
+    user = await createUser({
+      email,
+      name: name || email.split("@")[0],
+      passwordPlain: password,
+      emailVerified: true,
+    });
+  } else {
+    let valid = false;
+    if (user.password_hash) {
+      valid = await bcrypt.compare(password, user.password_hash);
+    } else {
+      valid = user.password_plain === password;
+    }
+    if (!valid) {
+      const usp = new URLSearchParams({ ...(params as any), error: "invalid_credentials" });
+      redirect(`/oauth2/authorize?${usp.toString()}`);
+    }
   }
 
   const code = newAuthCode();
-  saveAuthCode({
+  await saveAuthCode({
     code,
     sub: user.sub,
     clientId: client!.clientId,
@@ -73,92 +91,150 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const client = findClient(sp.client_id || "");
   const validClient =
     client && sp.redirect_uri && client.redirectUris.includes(sp.redirect_uri);
-  const appHint = (sp.app_hint || sp.client_id || "").toLowerCase();
-  const appClass =
-    appHint === "clara"
-      ? "tool-card-cyan"
-      : appHint === "will"
-        ? "tool-card-violet"
-        : "tool-card-emerald";
+  const appKey = appKeyFromHint(sp.app_hint || sp.client_id);
 
   return (
-    <main className="auth-shell">
-      <section className="auth-panel">
-        <div className="hero-topline">user.trefolio.com</div>
-        <h1>Sign in to your unified trefolio account</h1>
-        <p className="muted">
-          {validClient ? "Continue securely to:" : "Invalid OAuth client."}
-        </p>
-        {validClient && (
-          <div className={`app-pill ${appClass}`}>
-            <span>{client!.name}</span>
+    <div className="page-shell">
+      <main className="page-main">
+        <div className="card-narrow">
+          <div style={{ textAlign: "center" }}>
+            <Brand href="https://trefolio.com" />
           </div>
-        )}
-        <p className="seed-hint">
-          Dev users: <code>dev@trefolio.test</code> / <code>password123</code> (Pro) and{" "}
-          <code>free@trefolio.test</code> / <code>password123</code> (Free)
-        </p>
-      </section>
+          <div className="heading-stack">
+            <h1>Welcome back</h1>
+            <p>Sign in to your trefolio account</p>
+          </div>
 
-      {sp.error && (
-        <div className="error-banner">
-          {sp.error === "invalid_credentials" ? "Email or password is incorrect." : sp.error}
+          <div className="card">
+            {validClient && (
+              <div className="continue-pill">
+                <AppIcon app={appKey} size={22} />
+                <span>
+                  Continue to <strong>{client!.name}</strong>
+                </span>
+              </div>
+            )}
+
+            {!validClient && (
+              <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+                This sign-in link is invalid or expired. Please open the app you came from and try
+                again.
+              </div>
+            )}
+
+            {sp.error && (
+              <div className="alert alert-error" style={{ marginBottom: 16 }}>
+                {sp.error === "invalid_credentials"
+                  ? "Email or password is incorrect."
+                  : sp.error === "invalid_client"
+                    ? "This sign-in link is invalid."
+                    : sp.error}
+              </div>
+            )}
+
+            {validClient && (
+              <form action={handleSubmit} className="form-stack">
+                <input type="hidden" name="__client_id" value={sp.client_id || ""} />
+                <input type="hidden" name="__redirect_uri" value={sp.redirect_uri || ""} />
+                <input type="hidden" name="__state" value={sp.state || ""} />
+                <input type="hidden" name="__nonce" value={sp.nonce || ""} />
+                <input type="hidden" name="__code_challenge" value={sp.code_challenge || ""} />
+                <input
+                  type="hidden"
+                  name="__code_challenge_method"
+                  value={sp.code_challenge_method || "S256"}
+                />
+
+                <label className="field">
+                  <span>Email</span>
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    placeholder="you@example.com"
+                    defaultValue={isProd ? "" : "dev@trefolio.test"}
+                    className="input"
+                  />
+                </label>
+                <label className="field">
+                  <span>Password</span>
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    placeholder="••••••••"
+                    defaultValue={isProd ? "" : "password123"}
+                    className="input"
+                  />
+                </label>
+
+                <button type="submit" name="intent" value="login" className="btn btn-primary btn-block">
+                  Sign in
+                </button>
+
+                <div className="divider">
+                  <span>New here?</span>
+                </div>
+
+                <label className="field">
+                  <span>Your name</span>
+                  <input
+                    name="name"
+                    type="text"
+                    autoComplete="name"
+                    placeholder="How should we call you?"
+                    className="input"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  name="intent"
+                  value="signup"
+                  className="btn btn-secondary btn-block"
+                >
+                  Create a new account
+                </button>
+              </form>
+            )}
+          </div>
+
+          {!isProd && validClient && (
+            <p className="legal" style={{ marginTop: 14 }}>
+              Dev seeds: <code>dev@trefolio.test</code> / <code>password123</code>
+            </p>
+          )}
+
+          <p className="legal">
+            By signing in you agree to trefolio&apos;s{" "}
+            <a href="https://trefolio.com/terms" target="_blank" rel="noopener noreferrer">
+              Terms
+            </a>{" "}
+            and{" "}
+            <a href="https://trefolio.com/privacy" target="_blank" rel="noopener noreferrer">
+              Privacy Policy
+            </a>
+            .
+          </p>
         </div>
+      </main>
+
+      <PageFooter />
+
+      {!isProd && (
+        <p
+          style={{
+            textAlign: "center",
+            color: "var(--text-faint)",
+            fontSize: 11,
+            margin: "0 0 12px",
+          }}
+        >
+          identity service: <code>{getPublicIssuer()}</code>
+        </p>
       )}
-
-      {validClient && (
-        <form action={handleSubmit} className="auth-form">
-          <input type="hidden" name="__client_id" value={sp.client_id || ""} />
-          <input type="hidden" name="__redirect_uri" value={sp.redirect_uri || ""} />
-          <input type="hidden" name="__state" value={sp.state || ""} />
-          <input type="hidden" name="__nonce" value={sp.nonce || ""} />
-          <input type="hidden" name="__code_challenge" value={sp.code_challenge || ""} />
-          <input type="hidden" name="__code_challenge_method" value={sp.code_challenge_method || "S256"} />
-
-          <label className="field">
-            <span>Email</span>
-            <input
-              name="email"
-              type="email"
-              required
-              defaultValue="dev@trefolio.test"
-              className="input"
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              name="password"
-              type="password"
-              required
-              defaultValue="password123"
-              className="input"
-            />
-          </label>
-          <label className="field field-last">
-            <span>Name (signup only)</span>
-            <input
-              name="name"
-              type="text"
-              className="input"
-            />
-          </label>
-
-          <div className="actions">
-            <button type="submit" name="intent" value="login" className="primary-btn">
-              Sign in
-            </button>
-            <button type="submit" name="intent" value="signup" className="secondary-btn">
-              Create account
-            </button>
-          </div>
-        </form>
-      )}
-
-      <p className="auth-footer">
-        You are on <strong>user.trefolio.com</strong> ({process.env.NEXT_PUBLIC_APP_URL || "localhost:3300"}).
-        This is the shared identity service for trefolio, Clara, and Will.
-      </p>
-    </main>
+    </div>
   );
 }

@@ -13,6 +13,6 @@ export async function POST(req: NextRequest) {
   const tg = String(body.tgUserId || "");
   const sub = String(body.sub || "");
   if (!tg || !sub) return NextResponse.json({ error: "missing fields" }, { status: 400 });
-  linkTelegram(tg, sub);
+  await linkTelegram(tg, sub);
   return NextResponse.json({ ok: true, tgUserId: tg, sub });
 }

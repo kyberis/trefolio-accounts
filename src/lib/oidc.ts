@@ -3,8 +3,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getEntitlement, findUserBySub } from "./db";
+import { getPublicIssuer } from "./public-url";
 
-const ISSUER = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3300";
+const ISSUER = getPublicIssuer();
 const KID = process.env.IDP_RS256_KID || "trefolio-idp-dev-2026";
 
 let _privateKey: KeyLike | null = null;
@@ -43,8 +44,8 @@ interface BuildIdTokenArgs {
 
 export async function buildIdToken({ sub, aud, nonce }: BuildIdTokenArgs): Promise<string> {
   await loadKeys();
-  const user = findUserBySub(sub);
-  const ent = getEntitlement(sub);
+  const user = await findUserBySub(sub);
+  const ent = await getEntitlement(sub);
   const isPro = ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
 
   const claims: Record<string, unknown> = {

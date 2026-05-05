@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_client", error_description: "client_secret mismatch" }, { status: 401 });
   }
 
-  const stored = consumeAuthCode(code);
+  const stored = await consumeAuthCode(code);
   if (!stored) return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   if (stored.client_id !== clientId) return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   if (stored.redirect_uri !== redirectUri) return NextResponse.json({ error: "invalid_grant" }, { status: 400 });

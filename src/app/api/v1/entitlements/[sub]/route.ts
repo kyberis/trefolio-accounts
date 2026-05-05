@@ -17,9 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ sub:
   const fail = unauthorized(req);
   if (fail) return fail;
   const { sub } = await params;
-  const user = findUserBySub(sub);
+  const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const ent = getEntitlement(sub);
+  const ent = await getEntitlement(sub);
   const isPro = ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
   return NextResponse.json({
     sub,

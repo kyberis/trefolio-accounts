@@ -10,9 +10,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "invalid_token" }, { status: 401 });
   }
   const sub = token.split(".").pop() || "";
-  const user = findUserBySub(sub);
+  const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "invalid_token" }, { status: 401 });
-  const ent = getEntitlement(sub);
+  const ent = await getEntitlement(sub);
   return NextResponse.json({
     sub,
     email: user.email,

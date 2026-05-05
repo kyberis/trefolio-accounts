@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tgUs
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const { tgUserId } = await params;
-  const sub = findSubByTelegramId(tgUserId);
+  const sub = await findSubByTelegramId(tgUserId);
   if (!sub) return NextResponse.json({ error: "not_linked" }, { status: 404 });
   return NextResponse.json({ tgUserId, sub });
 }
