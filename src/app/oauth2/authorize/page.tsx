@@ -12,6 +12,7 @@ import { findUserByEmail, findUserBySub, saveAuthCode, createUser } from "@/lib/
 import { isGoogleConfigured } from "@/lib/google";
 import { getPublicIssuer } from "@/lib/public-url";
 import { PasskeySignInButton } from "@/components/PasskeySignInButton";
+import { PasswordField } from "@/components/PasswordField";
 import {
   IDP_SESSION_COOKIE,
   sessionCookieAttributes,
@@ -131,12 +132,22 @@ async function handleSubmit(formData: FormData) {
   const intent = String(formData.get("intent") || "login");
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "");
+  const passwordConfirm = String(formData.get("password_confirm") || "");
   const name = String(formData.get("name") || "");
   const params = readOidcParamsFromForm(formData);
 
   const client = findClient(params.client_id || "");
   if (!client || !params.redirect_uri || !client.redirectUris.includes(params.redirect_uri)) {
     redirect(`/oauth2/authorize?error=invalid_client`);
+  }
+
+  if (intent === "signup") {
+    if (password.length < 8) {
+      redirectAuthorizeError(params, "password_too_short");
+    }
+    if (password !== passwordConfirm) {
+      redirectAuthorizeError(params, "password_mismatch");
+    }
   }
 
   let user = await findUserByEmail(email);
@@ -267,10 +278,16 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
             {sp.error && (
               <div className="alert alert-error" style={{ marginBottom: 16 }}>
                 {sp.error === "invalid_credentials"
-                  ? "Email or password is incorrect."
-                  : sp.error === "invalid_client"
-                    ? "This sign-in link is invalid."
-                    : sp.error}
+                  ? signupFirst
+                    ? "This email already has an account. Enter your password to continue, or sign in with Google."
+                    : "Email or password is incorrect."
+                  : sp.error === "password_mismatch"
+                    ? "Passwords do not match. Type the same password twice."
+                    : sp.error === "password_too_short"
+                      ? "Password must be at least 8 characters."
+                      : sp.error === "invalid_client"
+                        ? "This sign-in link is invalid."
+                        : sp.error}
               </div>
             )}
 
@@ -341,14 +358,22 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                     </label>
                     <label className="field">
                       <span>Password</span>
-                      <input
+                      <PasswordField
                         name="password"
-                        type="password"
                         autoComplete="new-password"
                         required
-                        placeholder="••••••••"
+                        placeholder="At least 8 characters"
                         defaultValue={isProd ? "" : "password123"}
-                        className="input"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Repeat password</span>
+                      <PasswordField
+                        name="password_confirm"
+                        autoComplete="new-password"
+                        required
+                        placeholder="Same as above"
+                        defaultValue={isProd ? "" : "password123"}
                       />
                     </label>
                     <button
@@ -387,14 +412,12 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                     </label>
                     <label className="field">
                       <span>Password</span>
-                      <input
+                      <PasswordField
                         name="password"
-                        type="password"
                         autoComplete="current-password"
                         required
                         placeholder="••••••••"
                         defaultValue={isProd ? "" : "password123"}
-                        className="input"
                       />
                     </label>
                     <button

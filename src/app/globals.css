@@ -266,6 +266,45 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
 }
 
+.password-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.password-field-row .password-field-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.password-toggle-btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.password-toggle-btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
+}
+
 .divider {
   position: relative;
   margin: 6px 0;
