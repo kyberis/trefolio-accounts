@@ -9,3 +9,4 @@ node_modules/
 idp-private.pem
 idp-public.pem
 .vercel
+*.tsbuildinfo
