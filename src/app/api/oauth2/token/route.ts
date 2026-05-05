@@ -20,10 +20,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unsupported_grant_type" }, { status: 400 });
   }
 
+  // NextAuth (and most OIDC clients) authenticate with HTTP Basic by default;
+  // fall back to body params for clients that send credentials there.
+  let basicId: string | undefined;
+  let basicSecret: string | undefined;
+  const authHeader = req.headers.get("authorization") || "";
+  if (authHeader.toLowerCase().startsWith("basic ")) {
+    try {
+      const decoded = Buffer.from(authHeader.slice(6).trim(), "base64").toString("utf-8");
+      const idx = decoded.indexOf(":");
+      if (idx >= 0) {
+        basicId = decodeURIComponent(decoded.slice(0, idx));
+        basicSecret = decodeURIComponent(decoded.slice(idx + 1));
+      }
+    } catch {
+      // ignore malformed header; will fail invalid_client below
+    }
+  }
+
   const code = body.code;
   const redirectUri = body.redirect_uri;
-  const clientId = body.client_id;
-  const clientSecret = body.client_secret;
+  const clientId = basicId || body.client_id;
+  const clientSecret = basicSecret || body.client_secret;
   const codeVerifier = body.code_verifier;
 
   const client = findClient(clientId);

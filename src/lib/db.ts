@@ -46,6 +46,26 @@ export interface SeedUserRow {
   pro_until: string | null;
 }
 
+export interface AdminUserRow {
+  sub: string;
+  email: string;
+  name: string;
+  plan: "free" | "pro";
+  pro_until: string | null;
+  source: string | null;
+  google_id: string | null;
+  apple_id: string | null;
+  email_verified: number;
+  created_at: string | null;
+}
+
+export interface AdminUserListResult {
+  users: AdminUserRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 function sqliteRowToUser(row: any): DbUser {
   return {
     sub: String(row.sub),
@@ -128,6 +148,18 @@ async function ensurePostgresSchema(): Promise<void> {
           sub TEXT NOT NULL,
           verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS passkeys (
+          id TEXT PRIMARY KEY,
+          sub TEXT NOT NULL REFERENCES users(sub) ON DELETE CASCADE,
+          public_key TEXT NOT NULL,
+          counter BIGINT NOT NULL DEFAULT 0,
+          transports TEXT NOT NULL DEFAULT '',
+          backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+          device_name TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_used_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS passkeys_sub_idx ON passkeys(sub);
       `);
     } finally {
       client.release();
@@ -188,6 +220,18 @@ function getSqliteDb(): Database.Database {
       sub TEXT NOT NULL,
       verified_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS passkeys (
+      id TEXT PRIMARY KEY,
+      sub TEXT NOT NULL,
+      public_key TEXT NOT NULL,
+      counter INTEGER NOT NULL DEFAULT 0,
+      transports TEXT NOT NULL DEFAULT '',
+      backed_up INTEGER NOT NULL DEFAULT 0,
+      device_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS passkeys_sub_idx ON passkeys(sub);
   `);
   safeAlter(db, `ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN google_id TEXT`);
@@ -270,6 +314,25 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
        FROM users WHERE email = ?`,
     )
     .get(normalized) as any;
+  return row ? sqliteRowToUser(row) : null;
+}
+
+export async function findUserByGoogleId(googleId: string): Promise<DbUser | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+       FROM users WHERE google_id = $1`,
+      [googleId],
+    );
+    return rows[0] ? pgRowToUser(rows[0]) : null;
+  }
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+       FROM users WHERE google_id = ?`,
+    )
+    .get(googleId) as any;
   return row ? sqliteRowToUser(row) : null;
 }
 
@@ -636,6 +699,310 @@ export async function linkTelegram(tgUserId: string, sub: string): Promise<void>
       `INSERT INTO telegram_links (tg_user_id, sub) VALUES (?, ?) ON CONFLICT(tg_user_id) DO UPDATE SET sub = excluded.sub`,
     )
     .run(tgUserId, sub);
+}
+
+export async function listUsersForAdmin(args: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<AdminUserListResult> {
+  const page = Math.max(0, args.page ?? 0);
+  const pageSize = Math.min(200, Math.max(1, args.pageSize ?? 25));
+  const offset = page * pageSize;
+  const term = (args.search ?? "").trim().toLowerCase();
+  const like = term ? `%${term}%` : null;
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const where = like ? `WHERE LOWER(u.email) LIKE $1 OR LOWER(u.name) LIKE $1 OR u.sub = $1` : "";
+    const params: Array<string | number> = like ? [like] : [];
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+    const list = await getPool().query(
+      `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
+       FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
+       ${where}
+       ORDER BY u.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      [...params, pageSize, offset],
+    );
+    const count = await getPool().query(
+      `SELECT COUNT(*)::bigint AS n FROM users u ${where}`,
+      params,
+    );
+    return {
+      users: list.rows.map((row: any) => ({
+        sub: String(row.sub),
+        email: String(row.email),
+        name: String(row.name ?? ""),
+        plan: row.plan === "pro" ? "pro" : "free",
+        pro_until: toIsoString(row.pro_until),
+        source: row.source ?? null,
+        google_id: row.google_id ?? null,
+        apple_id: row.apple_id ?? null,
+        email_verified: row.email_verified ? 1 : 0,
+        created_at: toIsoString(row.created_at),
+      })),
+      total: Number(count.rows[0]?.n ?? 0),
+      page,
+      pageSize,
+    };
+  }
+
+  const db = getSqliteDb();
+  const where = like ? `WHERE LOWER(u.email) LIKE ? OR LOWER(u.name) LIKE ? OR u.sub = ?` : "";
+  const whereArgs: Array<string | number> = like ? [like, like, term] : [];
+  const rows = db
+    .prepare(
+      `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
+       FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
+       ${where}
+       ORDER BY u.created_at DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...whereArgs, pageSize, offset) as any[];
+  const total = (db
+    .prepare(`SELECT COUNT(*) AS n FROM users u ${where}`)
+    .get(...whereArgs) as any)?.n ?? 0;
+  return {
+    users: rows.map((row) => ({
+      sub: String(row.sub),
+      email: String(row.email),
+      name: String(row.name ?? ""),
+      plan: row.plan === "pro" ? "pro" : "free",
+      pro_until: toIsoString(row.pro_until),
+      source: row.source ?? null,
+      google_id: row.google_id ?? null,
+      apple_id: row.apple_id ?? null,
+      email_verified: row.email_verified ? 1 : 0,
+      created_at: toIsoString(row.created_at),
+    })),
+    total: Number(total),
+    page,
+    pageSize,
+  };
+}
+
+export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
+       FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
+       WHERE u.sub = $1`,
+      [sub],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      sub: String(row.sub),
+      email: String(row.email),
+      name: String(row.name ?? ""),
+      plan: row.plan === "pro" ? "pro" : "free",
+      pro_until: toIsoString(row.pro_until),
+      source: row.source ?? null,
+      google_id: row.google_id ?? null,
+      apple_id: row.apple_id ?? null,
+      email_verified: row.email_verified ? 1 : 0,
+      created_at: toIsoString(row.created_at),
+    };
+  }
+
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
+       FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
+       WHERE u.sub = ?`,
+    )
+    .get(sub) as any;
+  if (!row) return null;
+  return {
+    sub: String(row.sub),
+    email: String(row.email),
+    name: String(row.name ?? ""),
+    plan: row.plan === "pro" ? "pro" : "free",
+    pro_until: toIsoString(row.pro_until),
+    source: row.source ?? null,
+    google_id: row.google_id ?? null,
+    apple_id: row.apple_id ?? null,
+    email_verified: row.email_verified ? 1 : 0,
+    created_at: toIsoString(row.created_at),
+  };
+}
+
+export async function deleteUserBySub(sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(`DELETE FROM entitlements WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM telegram_links WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM auth_codes WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM passkeys WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM users WHERE sub = $1`, [sub]);
+    return;
+  }
+  const db = getSqliteDb();
+  db.prepare(`DELETE FROM entitlements WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM telegram_links WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM auth_codes WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM passkeys WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM users WHERE sub = ?`).run(sub);
+}
+
+export interface DbPasskey {
+  id: string;
+  sub: string;
+  public_key: string;
+  counter: number;
+  transports: string[];
+  backed_up: boolean;
+  device_name: string;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+function rowToPasskey(row: any): DbPasskey {
+  return {
+    id: String(row.id),
+    sub: String(row.sub),
+    public_key: String(row.public_key),
+    counter: Number(row.counter ?? 0),
+    transports: String(row.transports ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    backed_up: row.backed_up === 1 || row.backed_up === true,
+    device_name: String(row.device_name ?? ""),
+    created_at: toIsoString(row.created_at),
+    last_used_at: toIsoString(row.last_used_at),
+  };
+}
+
+export async function insertPasskey(args: {
+  id: string;
+  sub: string;
+  publicKey: string;
+  counter: number;
+  transports: string[];
+  backedUp: boolean;
+  deviceName?: string;
+}): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `INSERT INTO passkeys (id, sub, public_key, counter, transports, backed_up, device_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        args.id,
+        args.sub,
+        args.publicKey,
+        args.counter,
+        args.transports.join(","),
+        args.backedUp,
+        args.deviceName ?? "",
+      ],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(
+      `INSERT OR IGNORE INTO passkeys (id, sub, public_key, counter, transports, backed_up, device_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      args.id,
+      args.sub,
+      args.publicKey,
+      args.counter,
+      args.transports.join(","),
+      args.backedUp ? 1 : 0,
+      args.deviceName ?? "",
+    );
+}
+
+export async function findPasskeyById(id: string): Promise<DbPasskey | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT * FROM passkeys WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? rowToPasskey(rows[0]) : null;
+  }
+  const row = getSqliteDb()
+    .prepare(`SELECT * FROM passkeys WHERE id = ?`)
+    .get(id) as any;
+  return row ? rowToPasskey(row) : null;
+}
+
+export async function listPasskeysForSub(sub: string): Promise<DbPasskey[]> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT * FROM passkeys WHERE sub = $1 ORDER BY created_at DESC`,
+      [sub],
+    );
+    return rows.map(rowToPasskey);
+  }
+  const rows = getSqliteDb()
+    .prepare(`SELECT * FROM passkeys WHERE sub = ? ORDER BY created_at DESC`)
+    .all(sub) as any[];
+  return rows.map(rowToPasskey);
+}
+
+export async function updatePasskeyCounter(
+  id: string,
+  counter: number,
+): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE passkeys SET counter = $1, last_used_at = NOW() WHERE id = $2`,
+      [counter, id],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(
+      `UPDATE passkeys SET counter = ?, last_used_at = datetime('now') WHERE id = ?`,
+    )
+    .run(counter, id);
+}
+
+export async function deletePasskey(id: string, sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(`DELETE FROM passkeys WHERE id = $1 AND sub = $2`, [
+      id,
+      sub,
+    ]);
+    return;
+  }
+  getSqliteDb()
+    .prepare(`DELETE FROM passkeys WHERE id = ? AND sub = ?`)
+    .run(id, sub);
+}
+
+export async function renamePasskey(
+  id: string,
+  sub: string,
+  deviceName: string,
+): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE passkeys SET device_name = $1 WHERE id = $2 AND sub = $3`,
+      [deviceName, id, sub],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(`UPDATE passkeys SET device_name = ? WHERE id = ? AND sub = ?`)
+    .run(deviceName, id, sub);
 }
 
 export async function findSubByTelegramId(tgUserId: string): Promise<string | null> {

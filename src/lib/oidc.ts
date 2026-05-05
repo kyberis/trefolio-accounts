@@ -75,6 +75,12 @@ export interface OidcClient {
   clientId: string;
   clientSecret: string;
   redirectUris: string[];
+  /**
+   * Front-channel logout URLs the IdP loads as hidden iframes during
+   * `/api/oauth2/end_session`, so logging out of any one product also
+   * clears the other products' local sessions in the same browser.
+   */
+  frontchannelLogoutUris: string[];
   name: string;
 }
 
@@ -85,7 +91,14 @@ export const STATIC_CLIENTS: OidcClient[] = [
     redirectUris: [
       "http://localhost:3000/api/auth/oidc/callback",
       "http://localhost:3010/api/auth/oidc/callback",
+      "https://trefolio-dev.com/api/auth/oidc/callback",
       "https://trefolio.com/api/auth/oidc/callback",
+    ],
+    frontchannelLogoutUris: [
+      "http://localhost:3000/api/auth/idp-logout",
+      "http://localhost:3010/api/auth/idp-logout",
+      "https://trefolio-dev.com/api/auth/idp-logout",
+      "https://trefolio.com/api/auth/idp-logout",
     ],
     name: "trefolio",
   },
@@ -94,7 +107,13 @@ export const STATIC_CLIENTS: OidcClient[] = [
     clientSecret: process.env.IDP_CLIENT_SECRET_CLARA || "dev-clara-secret",
     redirectUris: [
       "http://localhost:3001/api/auth/callback/trefolio-id",
+      "https://clara.trefolio-dev.com/api/auth/callback/trefolio-id",
       "https://clara.trefolio.com/api/auth/callback/trefolio-id",
+    ],
+    frontchannelLogoutUris: [
+      "http://localhost:3001/api/auth/idp-logout",
+      "https://clara.trefolio-dev.com/api/auth/idp-logout",
+      "https://clara.trefolio.com/api/auth/idp-logout",
     ],
     name: "Clara",
   },
@@ -102,8 +121,14 @@ export const STATIC_CLIENTS: OidcClient[] = [
     clientId: "will",
     clientSecret: process.env.IDP_CLIENT_SECRET_WILL || "dev-will-secret",
     redirectUris: [
-      "http://localhost:3002/api/auth/callback/trefolio-id",
+      "http://localhost:3200/api/auth/callback/trefolio-id",
+      "https://will.trefolio-dev.com/api/auth/callback/trefolio-id",
       "https://will.trefolio.com/api/auth/callback/trefolio-id",
+    ],
+    frontchannelLogoutUris: [
+      "http://localhost:3200/api/auth/idp-logout",
+      "https://will.trefolio-dev.com/api/auth/idp-logout",
+      "https://will.trefolio.com/api/auth/idp-logout",
     ],
     name: "Will",
   },
