@@ -3,6 +3,9 @@
   "version": "0.1.0-dev",
   "private": true,
   "description": "Dev-only mock IdP for testing the unified-accounts OIDC flow against trefolio, Clara and Will locally. NOT for production.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "next dev -p 3300",
     "build": "next build",

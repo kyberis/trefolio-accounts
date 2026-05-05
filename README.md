@@ -23,6 +23,17 @@ This project emulates `user.trefolio.com` on `http://localhost:3300`.
   - `/v1/admin/users/import`
 - Dev UI styled as the trefolio ecosystem (Warren + Clara + Will).
 
+## Node.js and `better-sqlite3`
+
+This app loads **`better-sqlite3`** (native addon). The `.node` binary must match the **same major Node** you use for `npm install` / `npm run dev`.
+
+- If you see `NODE_MODULE_VERSION` mismatch (e.g. **127** vs **141**), you upgraded Node (e.g. 22 → 25) without rebuilding: run  
+  `npm rebuild better-sqlite3`  
+  (needs network the first time so `node-gyp` can fetch headers.)
+- Until prebuilt binaries exist for your Node version, the least-friction setup on macOS/Homebrew is **Node 22** for this repo only, e.g.  
+  `PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run dev`  
+  or `nvm use` / `fnm use` with the version in [`.nvmrc`](./.nvmrc).
+
 ## Local setup
 
 ```bash
