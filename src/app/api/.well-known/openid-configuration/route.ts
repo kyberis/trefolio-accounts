@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
-import { getPublicIssuer } from "@/lib/public-url";
+import { NextRequest, NextResponse } from "next/server";
+import { getRequestPublicIssuer } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const issuer = getPublicIssuer();
+export async function GET(req: NextRequest) {
+  const issuer = getRequestPublicIssuer(req);
   return NextResponse.json({
     issuer,
     authorization_endpoint: `${issuer}/oauth2/authorize`,

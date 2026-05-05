@@ -42,6 +42,15 @@ This app loads **`better-sqlite3`** (native addon). The `.node` binary must matc
 
 - On macOS/Homebrew, **Node 22** ([`.nvmrc`](./.nvmrc)) keeps parity with the rest of the trefolio stack; point `PATH` at that binary if multiple Nodes are installed.
 
+## OIDC issuer (`iss`) vs relying-party `IDP_BASE_URL`
+
+ID tokens use JWT claim **`iss`**. Each client (trefolio, Clara, Will) verifies that claim against its **`IDP_BASE_URL`**.
+
+- Behind **Caddy / Vercel**, discovery metadata and signed ID tokens derive the issuer from **`X-Forwarded-Host`** + **`X-Forwarded-Proto`** when present, so `https://user.trefolio-dev.com` matches `IDP_BASE_URL=https://user.trefolio-dev.com` even if `IDP_ISSUER` is unset.
+- Without forwarded headers (direct `localhost:3300`), set **`IDP_ISSUER`** on this app to the same origin you configure as **`IDP_BASE_URL`** on clients.
+
+If `iss` and `IDP_BASE_URL` differ, clients reject the ID token and restart OIDC — you will see repeated `/oauth2/authorize` navigations with a new `state` each time.
+
 ## Local setup
 
 ```bash

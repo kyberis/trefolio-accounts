@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumeAuthCode } from "@/lib/db";
 import { findClient, verifyPkce, buildIdToken } from "@/lib/oidc";
+import { getRequestPublicIssuer } from "@/lib/public-url";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, { status: 400 });
   }
 
-  const idToken = await buildIdToken({ sub: stored.sub, aud: clientId, nonce: stored.nonce });
+  const issuer = getRequestPublicIssuer(req);
+  const idToken = await buildIdToken({
+    sub: stored.sub,
+    aud: clientId,
+    nonce: stored.nonce,
+    issuer,
+  });
   const accessToken = "dev-access-" + randomBytes(16).toString("base64url") + "." + stored.sub;
 
   return NextResponse.json({

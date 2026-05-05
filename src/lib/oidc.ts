@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import { getEntitlement, findUserBySub } from "./db";
 import { getPublicIssuer } from "./public-url";
 
-const ISSUER = getPublicIssuer();
 const KID = process.env.IDP_RS256_KID || "trefolio-idp-dev-2026";
 
 let _privateKey: KeyLike | null = null;
@@ -40,9 +39,11 @@ interface BuildIdTokenArgs {
   sub: string;
   aud: string;
   nonce?: string | null;
+  /** Defaults to env issuer; pass request-derived issuer so `iss` matches client `IDP_BASE_URL`. */
+  issuer?: string;
 }
 
-export async function buildIdToken({ sub, aud, nonce }: BuildIdTokenArgs): Promise<string> {
+export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs): Promise<string> {
   await loadKeys();
   const user = await findUserBySub(sub);
   const ent = await getEntitlement(sub);
@@ -61,9 +62,11 @@ export async function buildIdToken({ sub, aud, nonce }: BuildIdTokenArgs): Promi
   };
   if (nonce) claims.nonce = nonce;
 
+  const iss = issuer ?? getPublicIssuer();
+
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "RS256", typ: "JWT", kid: KID })
-    .setIssuer(ISSUER)
+    .setIssuer(iss)
     .setSubject(sub)
     .setAudience(aud)
     .setIssuedAt()
