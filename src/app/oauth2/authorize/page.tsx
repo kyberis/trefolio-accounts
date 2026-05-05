@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-import { AppIcon, Brand, PageFooter, appKeyFromHint, appLabel } from "@/components/Brand";
-import { SsoCountdown } from "@/components/SsoCountdown";
+import { AppIcon, Brand, PageFooter, appKeyFromHint } from "@/components/Brand";
 import { findClient, newAuthCode } from "@/lib/oidc";
 import { findUserByEmail, findUserBySub, saveAuthCode, createUser } from "@/lib/db";
 import { isGoogleConfigured } from "@/lib/google";
@@ -18,7 +17,6 @@ import {
 export const dynamic = "force-dynamic";
 
 const isProd = process.env.NODE_ENV === "production";
-const SSO_REDIRECT_SECONDS = 3;
 
 interface SP {
   client_id?: string;
@@ -152,38 +150,6 @@ async function handleSubmit(formData: FormData) {
   redirect(cb.toString());
 }
 
-/**
- * "Use a different account" — clears the IdP session cookie and bounces
- * back to the same authorize URL (without `prompt=login`) so the form
- * appears for the next user. We validate the return URL is a same-origin
- * `/oauth2/authorize` path to prevent open-redirect abuse.
- */
-async function switchAccount(formData: FormData) {
-  "use server";
-  const back = String(formData.get("__back") || "");
-  let safeBack = "/";
-  try {
-    const u = new URL(back, "http://localhost");
-    if (u.pathname === "/oauth2/authorize") {
-      const params = new URLSearchParams(u.search);
-      params.delete("prompt");
-      safeBack = `/oauth2/authorize?${params.toString()}`;
-    }
-  } catch {
-    safeBack = "/";
-  }
-  const cookieStore = await cookies();
-  const attrs = sessionCookieAttributes();
-  cookieStore.set(attrs.name, "", {
-    httpOnly: attrs.httpOnly,
-    sameSite: attrs.sameSite,
-    path: attrs.path,
-    secure: attrs.secure,
-    maxAge: 0,
-  });
-  redirect(safeBack);
-}
-
 export default async function AuthorizePage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const client = findClient(sp.client_id || "");
@@ -192,10 +158,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const appKey = appKeyFromHint(sp.app_hint || sp.client_id);
   const promptLogin = sp.prompt === "login";
 
-  // True SSO: if the user already has a valid IdP session, mint a fresh
-  // code and render a confirmation card with a 3-second countdown so the
-  // user understands the unified-account redirect is happening (instead
-  // of a silent jump). `prompt=login` and `error=...` skip this path.
+  // True SSO: existing IdP session → mint code and HTTP-redirect to the client's
+  // callback (same as password login). Client-side countdown was unreliable across
+  // browsers/embeddings; server redirect always crosses user.* → trefolio-dev.com.
+  // Use `prompt=login` on the authorize request to force the login form (e.g. another account).
   if (validClient && !sp.error && !promptLogin) {
     const cookieStore = await cookies();
     const sub = verifySession(cookieStore.get(IDP_SESSION_COOKIE)?.value);
@@ -215,91 +181,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         const cb = new URL(sp.redirect_uri!);
         cb.searchParams.set("code", code);
         if (sp.state) cb.searchParams.set("state", sp.state);
-        const callbackUrl = cb.toString();
-
-        // Build the "use a different account" return URL so the form action
-        // can validate + bounce back to the same authorize request.
-        const sameAuthorize = new URLSearchParams();
-        for (const [k, v] of Object.entries(sp)) {
-          if (typeof v === "string" && v) sameAuthorize.set(k, v);
-        }
-        const backUrl = `/oauth2/authorize?${sameAuthorize.toString()}`;
-
-        return (
-          <div className="page-shell">
-            {/* Do not render <head> here: it would nest inside <body> and browsers
-                rewrite the DOM, breaking hydration. No-JS: use "Continue now" link;
-                with JS: SsoCountdown + meta refresh behavior via location.replace. */}
-            <main className="page-main">
-              <div className="card-narrow">
-                <div style={{ textAlign: "center" }}>
-                  <Brand href="https://trefolio.com" />
-                </div>
-                <div className="heading-stack">
-                  <h1>Already signed in</h1>
-                  <p>Continuing with your unified trefolio account</p>
-                </div>
-
-                <div className="card">
-                  <div className="continue-pill">
-                    <AppIcon app={appKey} size={22} />
-                    <span>
-                      Continuing to <strong>{appLabel(appKey)}</strong>
-                    </span>
-                  </div>
-
-                  <p
-                    style={{
-                      margin: "4px 0 0",
-                      color: "var(--text-muted)",
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    Signed in as
-                    <br />
-                    <strong style={{ color: "var(--text)" }}>{user.email}</strong>
-                  </p>
-
-                  <SsoCountdown to={callbackUrl} seconds={SSO_REDIRECT_SECONDS} />
-
-                  <a
-                    href={callbackUrl}
-                    className="btn btn-primary btn-block"
-                    style={{ marginTop: 8 }}
-                  >
-                    Continue now
-                  </a>
-
-                  <form action={switchAccount} style={{ marginTop: 10 }}>
-                    <input type="hidden" name="__back" value={backUrl} />
-                    <button
-                      type="submit"
-                      className="btn btn-secondary btn-block"
-                    >
-                      Use a different account
-                    </button>
-                  </form>
-                </div>
-              </div>
-            </main>
-
-            <PageFooter />
-
-            {!isProd && (
-              <p
-                style={{
-                  textAlign: "center",
-                  color: "var(--text-faint)",
-                  fontSize: 11,
-                  margin: "0 0 12px",
-                }}
-              >
-                identity service: <code>{getPublicIssuer()}</code>
-              </p>
-            )}
-          </div>
-        );
+        redirect(cb.toString());
       }
     }
   }

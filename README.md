@@ -51,6 +51,8 @@ ID tokens use JWT claim **`iss`**. Each client (trefolio, Clara, Will) verifies 
 
 If `iss` and `IDP_BASE_URL` differ, clients reject the ID token and restart OIDC — you will see repeated `/oauth2/authorize` navigations with a new `state` each time.
 
+When you already have an IdP session cookie, `/oauth2/authorize` **HTTP-redirects** straight to the client `redirect_uri` with `code` (no intermediate page). Add **`prompt=login`** to the authorize URL if you must show the password form (e.g. sign in as another user).
+
 ## Local setup
 
 ```bash
