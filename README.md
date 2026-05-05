@@ -94,4 +94,5 @@ You can switch plan per user from the homepage.
 - This repo is **dev-only**. Do not use these secrets in production.
 - The local DB (`idp-dev.db`) and keys (`idp-private.pem`, `idp-public.pem`) are ignored by git.
 - **Vercel / production:** PEM files are **not** in the deployment bundle. Set **`IDP_PRIVATE_KEY_PEM`** and **`IDP_PUBLIC_KEY_PEM`** (full PEM text; Vercel supports multiline secrets) on the `trefolio-accounts` project. Without them, `/api/oauth2/token` returns **500** when minting `id_token` after authorize — Will/Clara/trefolio then show `OAuthCallback` / token exchange errors.
+- **Email verification (password sign-up):** In production, set **`RESEND_API_KEY`** (and typically **`RESEND_FROM_ADDRESS`**, same as trefolio). New password accounts start **unverified** until the user opens the link on **`user.trefolio.com/api/auth/verify-email`**. Use **`IDP_SKIP_VERIFICATION_EMAIL=true`** only on staging if you must disable outbound mail.
 - Production `trefolio-accounts` uses PostgreSQL; key rotation remains a future ops task.

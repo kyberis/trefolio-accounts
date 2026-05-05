@@ -8,13 +8,27 @@ import {
   appKeyFromHint,
 } from "@/components/Brand";
 import { findClient, newAuthCode } from "@/lib/oidc";
-import { findUserByEmail, findUserBySub, saveAuthCode, createUser } from "@/lib/db";
+import {
+  createUser,
+  deleteUserBySub,
+  findUserByEmail,
+  findUserBySub,
+  saveAuthCode,
+} from "@/lib/db";
+import { idpSkipsVerificationEmail } from "@/lib/idp-email-policy";
+import { sendIdpVerificationEmail } from "@/lib/idp-verification-email";
+import {
+  buildOAuthResumeJson,
+  createIdpEmailVerificationJwt,
+} from "@/lib/idp-verification-token";
+import type { SP } from "@/lib/oauth-resume";
 import { isGoogleConfigured } from "@/lib/google";
 import { getPublicIssuer } from "@/lib/public-url";
 import { PasskeySignInButton } from "@/components/PasskeySignInButton";
 import { PasswordField } from "@/components/PasswordField";
 import {
   IDP_SESSION_COOKIE,
+  pendingResumeCookieAttributes,
   sessionCookieAttributes,
   signSession,
   verifySession,
@@ -23,27 +37,6 @@ import {
 export const dynamic = "force-dynamic";
 
 const isProd = process.env.NODE_ENV === "production";
-
-interface SP {
-  client_id?: string;
-  redirect_uri?: string;
-  response_type?: string;
-  scope?: string;
-  state?: string;
-  nonce?: string;
-  code_challenge?: string;
-  code_challenge_method?: string;
-  app_hint?: string;
-  /**
-   * Non-standard IdP UI hint. When `signup`, the authorize page opens in
-   * "create account" mode (also accepts `signup=1`).
-   */
-  screen_hint?: string;
-  /** Non-standard alias for `screen_hint=signup`. */
-  signup?: string;
-  error?: string;
-  prompt?: string;
-}
 
 /**
  * Build the URL the "Continue with Google" link points at. We forward
@@ -135,6 +128,8 @@ async function handleSubmit(formData: FormData) {
   const passwordConfirm = String(formData.get("password_confirm") || "");
   const name = String(formData.get("name") || "");
   const params = readOidcParamsFromForm(formData);
+  const skipVerify = idpSkipsVerificationEmail();
+  const resumeJson = buildOAuthResumeJson(params);
 
   const client = findClient(params.client_id || "");
   if (!client || !params.redirect_uri || !client.redirectUris.includes(params.redirect_uri)) {
@@ -151,17 +146,43 @@ async function handleSubmit(formData: FormData) {
   }
 
   let user = await findUserByEmail(email);
+
   if (!user) {
     if (intent !== "signup") {
       redirectAuthorizeError(params, "invalid_credentials");
+    }
+    if (!skipVerify) {
+      const created = await createUser({
+        email,
+        name: name || email.split("@")[0],
+        passwordPlain: password,
+        emailVerified: false,
+      });
+      const token = await createIdpEmailVerificationJwt({
+        sub: created.sub,
+        email: created.email,
+        resumeJson,
+      });
+      const sent = await sendIdpVerificationEmail(created.email, token);
+      if (!sent.success) {
+        await deleteUserBySub(created.sub);
+        redirectAuthorizeError(params, "verification_email_failed");
+      }
+      const jar = await cookies();
+      const pr = pendingResumeCookieAttributes();
+      jar.set(pr.name, resumeJson, {
+        httpOnly: pr.httpOnly,
+        sameSite: pr.sameSite,
+        path: pr.path,
+        maxAge: pr.maxAge,
+        secure: pr.secure,
+      });
+      redirect(`/account/check-email?e=${encodeURIComponent(email)}`);
     }
     user = await createUser({
       email,
       name: name || email.split("@")[0],
       passwordPlain: password,
-      // No confirmation email is sent from this path yet; keep verified so
-      // OIDC clients stay usable. Gate future Resend calls with
-      // idpSkipsVerificationEmail() in accounts mail helpers only.
       emailVerified: true,
     });
   } else {
@@ -176,6 +197,28 @@ async function handleSubmit(formData: FormData) {
     }
   }
 
+  if (!skipVerify && user.email_verified !== 1) {
+    const token = await createIdpEmailVerificationJwt({
+      sub: user.sub,
+      email: user.email,
+      resumeJson,
+    });
+    const sent = await sendIdpVerificationEmail(user.email, token);
+    if (!sent.success) {
+      redirectAuthorizeError(params, "verification_email_failed");
+    }
+    const jar = await cookies();
+    const pr = pendingResumeCookieAttributes();
+    jar.set(pr.name, resumeJson, {
+      httpOnly: pr.httpOnly,
+      sameSite: pr.sameSite,
+      path: pr.path,
+      maxAge: pr.maxAge,
+      secure: pr.secure,
+    });
+    redirect(`/account/check-email?e=${encodeURIComponent(email)}`);
+  }
+
   const code = newAuthCode();
   await saveAuthCode({
     code,
@@ -187,8 +230,6 @@ async function handleSubmit(formData: FormData) {
     nonce: params.nonce,
   });
 
-  // Persist the IdP session so subsequent /oauth2/authorize calls (from
-  // Clara, Will, or any other client) skip the login form for this user.
   const cookieStore = await cookies();
   const attrs = sessionCookieAttributes();
   cookieStore.set(attrs.name, signSession(user.sub), {
@@ -223,7 +264,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     const sub = verifySession(cookieStore.get(IDP_SESSION_COOKIE)?.value);
     if (sub) {
       const user = await findUserBySub(sub);
-      if (user) {
+      if (user && user.email_verified === 1) {
         const code = newAuthCode();
         await saveAuthCode({
           code,
@@ -285,7 +326,9 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                     ? "Passwords do not match. Type the same password twice."
                     : sp.error === "password_too_short"
                       ? "Password must be at least 8 characters."
-                      : sp.error === "invalid_client"
+                      : sp.error === "verification_email_failed"
+                        ? "We couldn’t send the verification email. Check RESEND_API_KEY on the server or try again."
+                        : sp.error === "invalid_client"
                         ? "This sign-in link is invalid."
                         : sp.error}
               </div>

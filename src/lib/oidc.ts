@@ -81,7 +81,7 @@ export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs
 
   const claims: Record<string, unknown> = {
     email: user?.email ?? null,
-    email_verified: true,
+    email_verified: Boolean(user?.email_verified),
     name: user?.name ?? "",
     pro_until: ent.pro_until,
     entitlements: {

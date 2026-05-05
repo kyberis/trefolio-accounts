@@ -17,6 +17,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * work after `npm run dev`.
  */
 export const IDP_SESSION_COOKIE = "idp_session";
+/** Serialized OAuth `/oauth2/authorize` resume JSON for pending email verification + resend. */
+export const IDP_PENDING_OAUTH_RESUME_COOKIE = "idp_pending_oauth_resume";
 /** When set alongside {@link IDP_SESSION_COOKIE}, the session is an operator viewing as another user (`sub` = victim, value here = signed admin `sub`). */
 export const IDP_IMPERSONATOR_COOKIE = "idp_impersonator";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -66,6 +68,24 @@ export function idpCookieAttributes(cookieName: string): {
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
+    secure: process.env.NODE_ENV === "production",
+  };
+}
+
+export function pendingResumeCookieAttributes(): {
+  name: string;
+  httpOnly: true;
+  sameSite: "lax";
+  path: "/";
+  maxAge: number;
+  secure: boolean;
+} {
+  return {
+    name: IDP_PENDING_OAUTH_RESUME_COOKIE,
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24,
     secure: process.env.NODE_ENV === "production",
   };
 }

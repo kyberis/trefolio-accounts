@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     sub,
     email: user.email,
-    email_verified: true,
+    email_verified: user.email_verified === 1,
     name: user.name,
     pro_until: ent.pro_until,
     entitlements: {
