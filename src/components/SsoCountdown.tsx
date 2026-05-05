@@ -7,21 +7,37 @@ interface Props {
   seconds?: number;
 }
 
+function hardNavigate(url: string): void {
+  // Full-page exit from the IdP; prefer assign + synthetic anchor — some embedded /
+  // dev tooling contexts handle these more reliably than replace alone.
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener noreferrer";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch {
+    /* ignore */
+  }
+  window.location.assign(url);
+}
+
 /**
  * Visible countdown that auto-navigates to `to` when it reaches zero.
  * Used by the /oauth2/authorize page when an existing IdP session is
  * about to short-circuit the login form — gives the user a moment to
  * notice the unified-account redirect instead of a silent jump.
  *
- * Uses one `setInterval` + a tick counter (not `remaining` in the effect
- * dependency list) so React Strict Mode and effect re-runs cannot clear the
- * timer between ticks — the previous pattern (`setTimeout` + `[remaining]`
- * deps) could leave the UI stuck (e.g. on "2…") after the first decrement.
- *
- * The redirect URL is captured once on first render (`targetUrlRef`). If `to`
- * were in the effect deps, any parent RSC re-flight with a newly minted `code`
- * would tear down the interval mid-countdown (often stranded on "1…") and
- * restart the timer.
+ * Implementation notes:
+ * - Redirect URL is locked on first render (`targetUrlRef`) so RSC updates with a
+ *   new `code` do not reset timers (see authorize page).
+ * - One **single** `setTimeout` fires the navigation at `seconds * 1000`. Visual
+ *   ticks use a short polling interval. This avoids relying on `setInterval` firing
+ *   exactly N times (Strict Mode + cleanup can strand “Redirecting in 2…”).
+ * - Effect deps are **empty**: run once per mount so Strict Mode’s mount→unmount→mount
+ *   cycle leaves only the second timer arm active (still ~`seconds` wall time).
  *
  * No-JS: users follow the parent page's primary link ("Continue now").
  */
@@ -36,24 +52,31 @@ export function SsoCountdown({ to, seconds = 3 }: Props) {
     const target = targetUrlRef.current ?? to;
     if (!target) return;
 
-    setRemaining(seconds);
-    let tick = 0;
-    const id = setInterval(() => {
-      tick += 1;
-      const next = Math.max(seconds - tick, 0);
-      setRemaining(next);
-      if (next <= 0) {
-        clearInterval(id);
-        // Defer past React commit / Strict Mode churn so navigation is not lost.
-        window.setTimeout(() => {
-          window.location.replace(target);
-        }, 0);
-      }
-    }, 1000);
+    const totalMs = Math.max(seconds, 1) * 1000;
+    const tickMs = 200;
+    const started = performance.now();
 
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL locked in targetUrlRef; `to` updates must not reset the timer
-  }, [seconds]);
+    setRemaining(seconds);
+
+    const pollId = window.setInterval(() => {
+      const elapsedSec = (performance.now() - started) / 1000;
+      const left = Math.max(seconds - elapsedSec, 0);
+      setRemaining(Math.ceil(left));
+    }, tickMs);
+
+    const redirectId = window.setTimeout(() => {
+      window.clearInterval(pollId);
+      setRemaining(0);
+      hardNavigate(target);
+    }, totalMs);
+
+    return () => {
+      window.clearInterval(pollId);
+      window.clearTimeout(redirectId);
+    };
+    // Intentionally empty: lock timing to first mount; `to` is in targetUrlRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <p
