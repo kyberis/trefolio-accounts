@@ -93,4 +93,5 @@ You can switch plan per user from the homepage.
 
 - This repo is **dev-only**. Do not use these secrets in production.
 - The local DB (`idp-dev.db`) and keys (`idp-private.pem`, `idp-public.pem`) are ignored by git.
-- Production `trefolio-accounts` should use PostgreSQL + Prisma and real key rotation.
+- **Vercel / production:** PEM files are **not** in the deployment bundle. Set **`IDP_PRIVATE_KEY_PEM`** and **`IDP_PUBLIC_KEY_PEM`** (full PEM text; Vercel supports multiline secrets) on the `trefolio-accounts` project. Without them, `/api/oauth2/token` returns **500** when minting `id_token` after authorize — Will/Clara/trefolio then show `OAuthCallback` / token exchange errors.
+- Production `trefolio-accounts` uses PostgreSQL; key rotation remains a future ops task.

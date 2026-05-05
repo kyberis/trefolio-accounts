@@ -10,10 +10,40 @@ const KID = process.env.IDP_RS256_KID || "trefolio-idp-dev-2026";
 let _privateKey: KeyLike | null = null;
 let _publicKey: KeyLike | null = null;
 
+/**
+ * RS256 keys for ID tokens + JWKS.
+ *
+ * - **Production (Vercel):** set `IDP_PRIVATE_KEY_PEM` and `IDP_PUBLIC_KEY_PEM`
+ *   to the full PEM text (PKCS#8 private + SPKI public). Gitignored
+ *   `idp-*.pem` files are not deployed.
+ * - **Local:** omit env vars and place `idp-private.pem` / `idp-public.pem` in
+ *   the project root (see README), or paste PEMs into `.env.local`.
+ */
+function readPemPair(): { priv: string; pub: string } {
+  const envPriv = process.env.IDP_PRIVATE_KEY_PEM?.trim();
+  const envPub = process.env.IDP_PUBLIC_KEY_PEM?.trim();
+  if (envPriv && envPub) {
+    return {
+      priv: envPriv.replace(/\\n/g, "\n"),
+      pub: envPub.replace(/\\n/g, "\n"),
+    };
+  }
+  const cwd = process.cwd();
+  try {
+    return {
+      priv: readFileSync(resolve(cwd, "idp-private.pem"), "utf-8"),
+      pub: readFileSync(resolve(cwd, "idp-public.pem"), "utf-8"),
+    };
+  } catch {
+    throw new Error(
+      "IdP RSA keys missing: set IDP_PRIVATE_KEY_PEM and IDP_PUBLIC_KEY_PEM on the server (required on Vercel), or add idp-private.pem + idp-public.pem for local dev.",
+    );
+  }
+}
+
 async function loadKeys(): Promise<void> {
   if (_privateKey && _publicKey) return;
-  const privPem = readFileSync(resolve(process.cwd(), "idp-private.pem"), "utf-8");
-  const pubPem = readFileSync(resolve(process.cwd(), "idp-public.pem"), "utf-8");
+  const { priv: privPem, pub: pubPem } = readPemPair();
   _privateKey = await importPKCS8(privPem, "RS256");
   _publicKey = await importSPKI(pubPem, "RS256");
 }
