@@ -8,3 +8,4 @@ node_modules/
 .npmrc
 idp-private.pem
 idp-public.pem
+.vercel
