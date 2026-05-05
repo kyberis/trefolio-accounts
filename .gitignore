@@ -1,0 +1,10 @@
+node_modules/
+.next/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env.local
+.npmrc
+idp-private.pem
+idp-public.pem

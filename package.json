@@ -1,0 +1,24 @@
+{
+  "name": "trefolio-accounts-dev",
+  "version": "0.1.0-dev",
+  "private": true,
+  "description": "Dev-only mock IdP for testing the unified-accounts OIDC flow against trefolio, Clara and Will locally. NOT for production.",
+  "scripts": {
+    "dev": "next dev -p 3300",
+    "build": "next build",
+    "start": "next start -p 3300"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "jose": "^5.9.6",
+    "better-sqlite3": "^11.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "typescript": "^5.6.0"
+  }
+}
