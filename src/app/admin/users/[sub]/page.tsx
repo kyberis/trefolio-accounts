@@ -10,6 +10,7 @@ import {
   setPlan,
   updateUserBySub,
 } from "@/lib/db";
+import { impersonateUserAction } from "@/lib/idp-impersonation-actions";
 import { getProductTargets, probeProductLinks } from "@/lib/product-links";
 
 export const dynamic = "force-dynamic";
@@ -242,20 +243,36 @@ export default async function AdminUserDetailPage({
         </article>
 
         <article className="card">
+          <h2 className="card-title">Sign in as this user</h2>
+          <p className="card-subtitle">
+            Sets your IdP browser session to this account so OIDC flows run as them.
+            Use <strong>Exit to admin</strong> in the top banner to return. You cannot
+            impersonate allow-listed admin emails.
+          </p>
+          <form action={impersonateUserAction} className="form-stack">
+            <input type="hidden" name="sub" value={user.sub} />
+            <button type="submit" className="btn btn-primary">
+              Sign in as {user.email}
+            </button>
+          </form>
+        </article>
+
+        <article className="card">
           <h2 className="card-title">Reset password</h2>
           <p className="card-subtitle">
-            Sets a fresh bcrypt hash. The user&apos;s next sign-in must use this new
-            password — old sessions are not invalidated automatically.
+            Sets a fresh bcrypt hash on this IdP account (required for email/password
+            sign-in). Sessions elsewhere are not invalidated automatically.
           </p>
           <form action={resetPasswordAction} className="form-stack">
             <input type="hidden" name="sub" value={user.sub} />
             <label className="field">
               <span>New password (≥ 8 chars)</span>
               <input
-                type="text"
+                type="password"
                 name="password"
                 minLength={8}
                 required
+                autoComplete="new-password"
                 className="input"
                 placeholder="temporary password"
               />

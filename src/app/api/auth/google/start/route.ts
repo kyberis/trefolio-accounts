@@ -55,6 +55,8 @@ export async function GET(req: NextRequest) {
       nonce: sp.get("nonce") || undefined,
       state: sp.get("state") || undefined,
       app_hint: sp.get("app_hint") || undefined,
+      screen_hint: sp.get("screen_hint") || undefined,
+      signup: sp.get("signup") || undefined,
       csrf,
     });
     cookieValue = made.value;

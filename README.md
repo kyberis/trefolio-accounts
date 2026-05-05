@@ -44,14 +44,27 @@ This app loads **`better-sqlite3`** (native addon). The `.node` binary must matc
 
 ## OIDC issuer (`iss`) vs relying-party `IDP_BASE_URL`
 
-ID tokens use JWT claim **`iss`**. Each client (trefolio, Clara, Will) verifies that claim against its **`IDP_BASE_URL`**.
+ID tokens use JWT claim **`iss`**. Each client (trefolio, Clara, Will) verifies that claim against the **`issuer`** from OIDC discovery (NextAuth) or against **`IDP_ISSUER`** on trefolio’s custom OIDC client.
 
-- Behind **Caddy / Vercel**, discovery metadata and signed ID tokens derive the issuer from **`X-Forwarded-Host`** + **`X-Forwarded-Proto`** when present, so `https://user.trefolio-dev.com` matches `IDP_BASE_URL=https://user.trefolio-dev.com` even if `IDP_ISSUER` is unset.
-- Without forwarded headers (direct `localhost:3300`), set **`IDP_ISSUER`** on this app to the same origin you configure as **`IDP_BASE_URL`** on clients.
+- Behind **Caddy / Vercel**, discovery metadata and signed ID tokens derive the issuer from **`X-Forwarded-Host`** + **`X-Forwarded-Proto`** when present, so `https://user.trefolio-dev.com` matches clients that use **`IDP_BASE_URL=https://user.trefolio-dev.com`** even if **`IDP_ISSUER`** is unset.
+- Without forwarded headers (direct `localhost:3300` metadata fetch), set **`IDP_ISSUER`** on this app to the **browser-facing** origin (e.g. `https://user.trefolio-dev.com`). JWTs and **`authorization_endpoint`** will use that issuer so users are not sent to `localhost` when apps use loopback **`IDP_BASE_URL`**.
+- Optional **`IDP_SERVER_ORIGIN`** (e.g. `http://127.0.0.1:3300`): when metadata is fetched without `X-Forwarded-Host`, **`token_endpoint`**, **`userinfo_endpoint`**, and **`jwks_uri`** in discovery point at this origin so Node clients avoid TLS to `*.trefolio-dev.com` while the authorize URL stays on **`IDP_ISSUER`**. See parent monorepo [`dev/README.md`](../../dev/README.md).
 
-If `iss` and `IDP_BASE_URL` differ, clients reject the ID token and restart OIDC — you will see repeated `/oauth2/authorize` navigations with a new `state` each time.
+If `iss` and what the client expects differ, clients reject the ID token and restart OIDC — you will see repeated `/oauth2/authorize` navigations with a new `state` each time.
 
 When you already have an IdP session cookie, `/oauth2/authorize` **HTTP-redirects** straight to the client `redirect_uri` with `code` (no intermediate page). Add **`prompt=login`** to the authorize URL if you must show the password form (e.g. sign in as another user).
+
+### Authorize UI hints (non-standard query params)
+
+These are **ignored by the OAuth protocol** but read by this app’s `/oauth2/authorize` UI:
+
+| Param | Meaning |
+| ----- | ------- |
+| `app_hint` | `trefolio` · `clara` · `will` — branding on the login/signup screen (falls back to `client_id`). |
+| `screen_hint=signup` | Opens **create-account-first** layout (equivalent: `signup=1`). |
+| `login_hint` | Pre-fills the email field. |
+
+Google and passkey side-trips stash these via the signed `oidc_pending` cookie so errors return you to the same mode.
 
 ## Local setup
 

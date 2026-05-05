@@ -31,6 +31,16 @@ const APP_LABEL: Record<AppKey, string> = {
   will: "Will",
 };
 
+const APP_HOME: Record<AppKey, string> = {
+  trefolio: "https://trefolio.com",
+  clara: "https://clara.trefolio.com",
+  will: "https://will.trefolio.com",
+};
+
+export function appHomeUrl(app: AppKey): string {
+  return APP_HOME[app];
+}
+
 export function appKeyFromHint(hint: string | undefined | null): AppKey {
   const h = (hint || "").toLowerCase();
   if (h === "clara") return "clara";
@@ -58,6 +68,47 @@ export function AppIcon({ app, size = 28, className }: AppIconProps) {
 
 export function appLabel(app: AppKey): string {
   return APP_LABEL[app];
+}
+
+export function AuthorizeBrandHeader({ app }: { app: AppKey }) {
+  const href = APP_HOME[app];
+  return (
+    <a href={href} className="brand-header" aria-label={`${APP_LABEL[app]} home`}>
+      <img
+        src={APP_ICON[app]}
+        alt=""
+        width={40}
+        height={40}
+        className="brand-mark"
+      />
+      <span className="brand-name">{APP_LABEL[app]}</span>
+    </a>
+  );
+}
+
+/** Footer on `/oauth2/authorize`: legal links stay on trefolio.com (unified policy). */
+export function AuthorizePageFooter({ app }: { app: AppKey }) {
+  const year = new Date().getFullYear();
+  const product = APP_LABEL[app];
+  return (
+    <footer className="page-footer">
+      <span>
+        &copy; {year} {product}
+      </span>
+      <span className="footer-sep">·</span>
+      <a href="https://trefolio.com/privacy" target="_blank" rel="noopener noreferrer">
+        Privacy
+      </a>
+      <span className="footer-sep">·</span>
+      <a href="https://trefolio.com/terms" target="_blank" rel="noopener noreferrer">
+        Terms
+      </a>
+      <span className="footer-sep">·</span>
+      <a href="https://trefolio.com/contact" target="_blank" rel="noopener noreferrer">
+        Contact
+      </a>
+    </footer>
+  );
 }
 
 export function PageFooter() {

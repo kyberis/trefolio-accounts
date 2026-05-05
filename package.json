@@ -7,9 +7,13 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "predev": "node scripts/ensure-node22.mjs",
+    "prebuild": "node scripts/ensure-node22.mjs",
+    "prestart": "node scripts/ensure-node22.mjs",
     "dev": "next dev -p 3300",
     "build": "next build",
-    "start": "next start -p 3300"
+    "start": "next start -p 3300",
+    "rebuild:native": "npm rebuild better-sqlite3"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^11.0.0",

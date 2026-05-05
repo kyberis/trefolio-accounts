@@ -582,6 +582,59 @@ a:hover {
   color: var(--text);
 }
 
+/* ─── operator impersonation (IdP admin) ───────────────────────── */
+
+.impersonation-banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: #f5f3ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 20px rgba(91, 33, 182, 0.35);
+}
+
+.impersonation-banner-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.impersonation-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.impersonation-banner strong {
+  font-weight: 700;
+}
+
+.impersonation-banner-meta {
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+.impersonation-banner .mono {
+  font-size: 11px;
+}
+
+.impersonation-banner-exit {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.impersonation-banner-exit:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
 /* ─── admin layout ─────────────────────────────────────────────── */
 
 .admin-topbar {
@@ -956,4 +1009,48 @@ a:hover {
 .admin-inline-form {
   flex-direction: row;
   align-items: center;
+}
+
+/* ─── /oauth2/authorize per-app accents (non-standard UI hints: screen_hint, signup) ─ */
+
+[data-authorize-app="trefolio"] .brand-header .brand-mark {
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.25);
+}
+
+[data-authorize-app="clara"] {
+  --emerald: #6366f1;
+  --emerald-strong: #4f46e5;
+  --emerald-soft: rgba(99, 102, 241, 0.14);
+  --emerald-border: rgba(99, 102, 241, 0.4);
+}
+
+[data-authorize-app="clara"] .brand-header .brand-mark {
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.35);
+}
+
+[data-authorize-app="clara"] a:not(.btn):not(.brand-header) {
+  color: var(--emerald-strong);
+}
+
+[data-authorize-app="clara"] a:not(.btn):not(.brand-header):hover {
+  color: var(--emerald);
+}
+
+[data-authorize-app="will"] {
+  --emerald: #e11d48;
+  --emerald-strong: #be123c;
+  --emerald-soft: rgba(225, 29, 72, 0.12);
+  --emerald-border: rgba(225, 29, 72, 0.35);
+}
+
+[data-authorize-app="will"] .brand-header .brand-mark {
+  box-shadow: 0 6px 18px rgba(225, 29, 72, 0.3);
+}
+
+[data-authorize-app="will"] a:not(.btn):not(.brand-header) {
+  color: var(--emerald-strong);
+}
+
+[data-authorize-app="will"] a:not(.btn):not(.brand-header):hover {
+  color: var(--emerald);
 }

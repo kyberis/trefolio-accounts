@@ -17,6 +17,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * work after `npm run dev`.
  */
 export const IDP_SESSION_COOKIE = "idp_session";
+/** When set alongside {@link IDP_SESSION_COOKIE}, the session is an operator viewing as another user (`sub` = victim, value here = signed admin `sub`). */
+export const IDP_IMPERSONATOR_COOKIE = "idp_impersonator";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function getSecret(): string {
@@ -50,7 +52,7 @@ export function verifySession(value: string | undefined | null): string | null {
   return sub;
 }
 
-export function sessionCookieAttributes(): {
+export function idpCookieAttributes(cookieName: string): {
   name: string;
   httpOnly: true;
   sameSite: "lax";
@@ -59,11 +61,22 @@ export function sessionCookieAttributes(): {
   secure: boolean;
 } {
   return {
-    name: IDP_SESSION_COOKIE,
+    name: cookieName,
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
     secure: process.env.NODE_ENV === "production",
   };
+}
+
+export function sessionCookieAttributes(): {
+  name: string;
+  httpOnly: true;
+  sameSite: "lax";
+  path: "/";
+  maxAge: number;
+  secure: boolean;
+} {
+  return idpCookieAttributes(IDP_SESSION_COOKIE);
 }

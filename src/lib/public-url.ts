@@ -32,3 +32,24 @@ export function getRequestPublicIssuer(req: NextRequest): string {
   }
   return getPublicIssuer();
 }
+
+/**
+ * Origin for machine-facing OIDC endpoints in discovery (`token`, `userinfo`, `jwks`).
+ *
+ * When clients fetch `/.well-known/openid-configuration` over **loopback** (no
+ * `X-Forwarded-Host`), listing HTTPS `user.trefolio-dev.com` for those endpoints
+ * forces Node to trust Caddy's CA. Optional **`IDP_SERVER_ORIGIN`** (e.g.
+ * `http://127.0.0.1:3300`) rewrites only those three URLs while **`issuer`** and
+ * **`authorization_endpoint`** stay on the public issuer (browser).
+ *
+ * When metadata is requested **through** Caddy/Vercel, forwarded headers are set
+ * and this returns the same origin as {@link getRequestPublicIssuer} so external
+ * callers see a single HTTPS issuer.
+ */
+export function getMetadataApiOrigin(req: NextRequest): string {
+  const issuer = getRequestPublicIssuer(req);
+  const forwarded = Boolean(req.headers.get("x-forwarded-host")?.trim());
+  const split = process.env.IDP_SERVER_ORIGIN?.trim().replace(/\/+$/, "");
+  if (split && !forwarded) return split;
+  return issuer;
+}

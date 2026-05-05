@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { STATIC_CLIENTS } from "@/lib/oidc";
-import { IDP_SESSION_COOKIE, sessionCookieAttributes } from "@/lib/session";
+import {
+  IDP_IMPERSONATOR_COOKIE,
+  IDP_SESSION_COOKIE,
+  idpCookieAttributes,
+  sessionCookieAttributes,
+} from "@/lib/session";
 
 /**
  * RP-initiated logout with single-sign-out (front-channel logout).
@@ -186,6 +191,14 @@ ${iframes}
     sameSite: attrs.sameSite,
     path: attrs.path,
     secure: attrs.secure,
+    maxAge: 0,
+  });
+  const imp = idpCookieAttributes(IDP_IMPERSONATOR_COOKIE);
+  res.cookies.set(IDP_IMPERSONATOR_COOKIE, "", {
+    httpOnly: imp.httpOnly,
+    sameSite: imp.sameSite,
+    path: imp.path,
+    secure: imp.secure,
     maxAge: 0,
   });
   return res;

@@ -8,7 +8,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  *
  * Format: `<base64url(json)>.<hmacSha256Base64Url(payload)>`.
  *   payload = { client_id, redirect_uri, code_challenge,
- *               code_challenge_method, nonce, state, app_hint, exp, csrf }
+ *               code_challenge_method, nonce, state, app_hint,
+ *               screen_hint, signup, exp, csrf }
  *
  * The `csrf` field doubles as the OAuth `state` value we send to Google /
  * the WebAuthn challenge id, so we can verify the round-trip wasn't
@@ -37,6 +38,10 @@ export interface PendingOidc {
   nonce?: string;
   state?: string;
   app_hint?: string;
+  /** IdP authorize UI: show signup-first when "signup". */
+  screen_hint?: string;
+  /** IdP authorize UI: "1" = signup-first (alias of screen_hint=signup). */
+  signup?: string;
   /** epoch seconds */
   exp: number;
   csrf: string;
@@ -57,6 +62,8 @@ export function makePending(
     nonce: args.nonce,
     state: args.state,
     app_hint: args.app_hint,
+    screen_hint: args.screen_hint,
+    signup: args.signup,
     exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
     csrf: args.csrf ?? newCsrf(),
   };

@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-import { AppIcon, Brand, PageFooter, appKeyFromHint } from "@/components/Brand";
+import {
+  AppIcon,
+  AuthorizeBrandHeader,
+  AuthorizePageFooter,
+  appKeyFromHint,
+} from "@/components/Brand";
 import { findClient, newAuthCode } from "@/lib/oidc";
 import { findUserByEmail, findUserBySub, saveAuthCode, createUser } from "@/lib/db";
 import { isGoogleConfigured } from "@/lib/google";
@@ -28,6 +33,13 @@ interface SP {
   code_challenge?: string;
   code_challenge_method?: string;
   app_hint?: string;
+  /**
+   * Non-standard IdP UI hint. When `signup`, the authorize page opens in
+   * "create account" mode (also accepts `signup=1`).
+   */
+  screen_hint?: string;
+  /** Non-standard alias for `screen_hint=signup`. */
+  signup?: string;
   error?: string;
   prompt?: string;
 }
@@ -43,6 +55,11 @@ function buildGoogleStartUrl(sp: SP): string {
     if (typeof v === "string" && v) out.set(k, v);
   }
   return `/api/auth/google/start?${out.toString()}`;
+}
+
+function wantsSignupFirst(sp: SP): boolean {
+  if ((sp.screen_hint || "").toLowerCase() === "signup") return true;
+  return sp.signup === "1";
 }
 
 function GoogleGlyph() {
@@ -74,13 +91,8 @@ function GoogleGlyph() {
   );
 }
 
-async function handleSubmit(formData: FormData) {
-  "use server";
-  const intent = String(formData.get("intent") || "login");
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  const name = String(formData.get("name") || "");
-  const params: SP = {
+function readOidcParamsFromForm(formData: FormData): SP {
+  return {
     client_id: String(formData.get("__client_id") || ""),
     redirect_uri: String(formData.get("__redirect_uri") || ""),
     state: String(formData.get("__state") || ""),
@@ -89,7 +101,38 @@ async function handleSubmit(formData: FormData) {
     code_challenge_method: String(formData.get("__code_challenge_method") || "S256"),
     response_type: "code",
     scope: "openid email profile",
+    app_hint: String(formData.get("__app_hint") || "") || undefined,
+    screen_hint: String(formData.get("__screen_hint") || "") || undefined,
+    signup: String(formData.get("__signup") || "") || undefined,
+    prompt: String(formData.get("__prompt") || "") || undefined,
   };
+}
+
+function redirectAuthorizeError(sp: SP, error: string) {
+  const usp = new URLSearchParams();
+  if (sp.client_id) usp.set("client_id", sp.client_id);
+  if (sp.redirect_uri) usp.set("redirect_uri", sp.redirect_uri);
+  if (sp.state) usp.set("state", sp.state);
+  if (sp.nonce) usp.set("nonce", sp.nonce);
+  if (sp.code_challenge) usp.set("code_challenge", sp.code_challenge);
+  if (sp.code_challenge_method) usp.set("code_challenge_method", sp.code_challenge_method);
+  usp.set("response_type", "code");
+  usp.set("scope", sp.scope || "openid email profile");
+  if (sp.app_hint) usp.set("app_hint", sp.app_hint);
+  if (sp.screen_hint) usp.set("screen_hint", sp.screen_hint);
+  if (sp.signup) usp.set("signup", sp.signup);
+  if (sp.prompt) usp.set("prompt", sp.prompt);
+  usp.set("error", error);
+  redirect(`/oauth2/authorize?${usp.toString()}`);
+}
+
+async function handleSubmit(formData: FormData) {
+  "use server";
+  const intent = String(formData.get("intent") || "login");
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const password = String(formData.get("password") || "");
+  const name = String(formData.get("name") || "");
+  const params = readOidcParamsFromForm(formData);
 
   const client = findClient(params.client_id || "");
   if (!client || !params.redirect_uri || !client.redirectUris.includes(params.redirect_uri)) {
@@ -99,13 +142,15 @@ async function handleSubmit(formData: FormData) {
   let user = await findUserByEmail(email);
   if (!user) {
     if (intent !== "signup") {
-      const usp = new URLSearchParams({ ...(params as any), error: "invalid_credentials" });
-      redirect(`/oauth2/authorize?${usp.toString()}`);
+      redirectAuthorizeError(params, "invalid_credentials");
     }
     user = await createUser({
       email,
       name: name || email.split("@")[0],
       passwordPlain: password,
+      // No confirmation email is sent from this path yet; keep verified so
+      // OIDC clients stay usable. Gate future Resend calls with
+      // idpSkipsVerificationEmail() in accounts mail helpers only.
       emailVerified: true,
     });
   } else {
@@ -116,8 +161,7 @@ async function handleSubmit(formData: FormData) {
       valid = user.password_plain === password;
     }
     if (!valid) {
-      const usp = new URLSearchParams({ ...(params as any), error: "invalid_credentials" });
-      redirect(`/oauth2/authorize?${usp.toString()}`);
+      redirectAuthorizeError(params, "invalid_credentials");
     }
   }
 
@@ -157,6 +201,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     client && sp.redirect_uri && client.redirectUris.includes(sp.redirect_uri);
   const appKey = appKeyFromHint(sp.app_hint || sp.client_id);
   const promptLogin = sp.prompt === "login";
+  const signupFirst = wantsSignupFirst(sp);
 
   // True SSO: existing IdP session → mint code and HTTP-redirect to the client's
   // callback (same as password login). Client-side countdown was unreliable across
@@ -187,15 +232,19 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   }
 
   return (
-    <div className="page-shell">
+    <div className="page-shell" data-authorize-app={appKey}>
       <main className="page-main">
         <div className="card-narrow">
           <div style={{ textAlign: "center" }}>
-            <Brand href="https://trefolio.com" />
+            <AuthorizeBrandHeader app={appKey} />
           </div>
           <div className="heading-stack">
-            <h1>Welcome back</h1>
-            <p>Sign in to your trefolio account</p>
+            <h1>{signupFirst ? "Create your account" : "Welcome back"}</h1>
+            <p>
+              {signupFirst
+                ? "One password for trefolio, Clara, and Will."
+                : "Sign in with your trefolio account"}
+            </p>
           </div>
 
           <div className="card">
@@ -237,6 +286,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                   name="__code_challenge_method"
                   value={sp.code_challenge_method || "S256"}
                 />
+                <input type="hidden" name="__app_hint" value={sp.app_hint || ""} />
+                <input type="hidden" name="__screen_hint" value={sp.screen_hint || ""} />
+                <input type="hidden" name="__signup" value={sp.signup || ""} />
+                <input type="hidden" name="__prompt" value={sp.prompt || ""} />
 
                 <div className="form-stack" style={{ gap: 8, marginBottom: 4 }}>
                   {isGoogleConfigured() && (
@@ -262,58 +315,119 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                   </div>
                 </div>
 
-                <label className="field">
-                  <span>Email</span>
-                  <input
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    placeholder="you@example.com"
-                    defaultValue={isProd ? "" : "dev@trefolio.test"}
-                    className="input"
-                  />
-                </label>
-                <label className="field">
-                  <span>Password</span>
-                  <input
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    placeholder="••••••••"
-                    defaultValue={isProd ? "" : "password123"}
-                    className="input"
-                  />
-                </label>
-
-                <button type="submit" name="intent" value="login" className="btn btn-primary btn-block">
-                  Sign in
-                </button>
-
-                <div className="divider">
-                  <span>New here?</span>
-                </div>
-
-                <label className="field">
-                  <span>Your name</span>
-                  <input
-                    name="name"
-                    type="text"
-                    autoComplete="name"
-                    placeholder="How should we call you?"
-                    className="input"
-                  />
-                </label>
-
-                <button
-                  type="submit"
-                  name="intent"
-                  value="signup"
-                  className="btn btn-secondary btn-block"
-                >
-                  Create a new account
-                </button>
+                {signupFirst ? (
+                  <>
+                    <label className="field">
+                      <span>Your name</span>
+                      <input
+                        name="name"
+                        type="text"
+                        autoComplete="name"
+                        placeholder="How should we call you?"
+                        className="input"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Email</span>
+                      <input
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        placeholder="you@example.com"
+                        defaultValue={isProd ? "" : "dev@trefolio.test"}
+                        className="input"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Password</span>
+                      <input
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        placeholder="••••••••"
+                        defaultValue={isProd ? "" : "password123"}
+                        className="input"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="signup"
+                      className="btn btn-primary btn-block"
+                    >
+                      Create a new account
+                    </button>
+                    <div className="divider">
+                      <span>Already have an account?</span>
+                    </div>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="login"
+                      className="btn btn-secondary btn-block"
+                    >
+                      Sign in
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label className="field">
+                      <span>Email</span>
+                      <input
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        placeholder="you@example.com"
+                        defaultValue={isProd ? "" : "dev@trefolio.test"}
+                        className="input"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Password</span>
+                      <input
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        placeholder="••••••••"
+                        defaultValue={isProd ? "" : "password123"}
+                        className="input"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="login"
+                      className="btn btn-primary btn-block"
+                    >
+                      Sign in
+                    </button>
+                    <div className="divider">
+                      <span>New here?</span>
+                    </div>
+                    <label className="field">
+                      <span>Your name</span>
+                      <input
+                        name="name"
+                        type="text"
+                        autoComplete="name"
+                        placeholder="How should we call you?"
+                        className="input"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="signup"
+                      className="btn btn-secondary btn-block"
+                    >
+                      Create a new account
+                    </button>
+                  </>
+                )}
               </form>
             )}
           </div>
@@ -325,7 +439,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
           )}
 
           <p className="legal">
-            By signing in you agree to trefolio&apos;s{" "}
+            By continuing you agree to trefolio&apos;s{" "}
             <a href="https://trefolio.com/terms" target="_blank" rel="noopener noreferrer">
               Terms
             </a>{" "}
@@ -338,7 +452,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         </div>
       </main>
 
-      <PageFooter />
+      <AuthorizePageFooter app={appKey} />
 
       {!isProd && (
         <p

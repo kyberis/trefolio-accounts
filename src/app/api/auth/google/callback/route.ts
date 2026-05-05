@@ -173,6 +173,8 @@ function rebuildAuthorizeUrl(
   if (pending.nonce) sp.set("nonce", pending.nonce);
   if (pending.state) sp.set("state", pending.state);
   if (pending.app_hint) sp.set("app_hint", pending.app_hint);
+  if (pending.screen_hint) sp.set("screen_hint", pending.screen_hint);
+  if (pending.signup) sp.set("signup", pending.signup);
   sp.set("error", error);
   return `/oauth2/authorize?${sp.toString()}`;
 }

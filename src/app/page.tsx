@@ -3,10 +3,12 @@ import { listUsersWithEntitlements, setPlan, type SeedUserRow } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const isProd = process.env.NODE_ENV === "production";
+/** Seed-user panel only under `next dev` — never on prod or preview (`next build` sets NODE_ENV=production). */
+const isDevServer = process.env.NODE_ENV === "development";
 
 async function togglePlan(formData: FormData) {
   "use server";
+  if (process.env.NODE_ENV !== "development") return;
   const sub = String(formData.get("sub") || "");
   const plan = String(formData.get("plan") || "");
   if (!sub) return;
@@ -18,7 +20,7 @@ async function togglePlan(formData: FormData) {
 }
 
 export default async function Home() {
-  const users: SeedUserRow[] = isProd ? [] : await listUsersWithEntitlements();
+  const users: SeedUserRow[] = isDevServer ? await listUsersWithEntitlements() : [];
 
   return (
     <div className="page-shell">
@@ -65,11 +67,12 @@ export default async function Home() {
           </p>
         </div>
 
-        {!isProd && users.length > 0 && (
+        {isDevServer && users.length > 0 && (
           <section className="dev-banner">
             <h2>Seed users (dev)</h2>
             <p>
-              Default password: <code>password123</code>. This panel is hidden in production.
+              Default password: <code>password123</code>. Only visible when running{" "}
+              <code>next dev</code>; production and preview deployments never load this block.
             </p>
             <div className="dev-table-wrap">
               <table className="dev-table">

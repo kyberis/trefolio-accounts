@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestPublicIssuer } from "@/lib/public-url";
+import { getMetadataApiOrigin, getRequestPublicIssuer } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const issuer = getRequestPublicIssuer(req);
+  const api = getMetadataApiOrigin(req);
   return NextResponse.json({
     issuer,
     authorization_endpoint: `${issuer}/oauth2/authorize`,
-    token_endpoint: `${issuer}/api/oauth2/token`,
-    userinfo_endpoint: `${issuer}/api/oauth2/userinfo`,
-    jwks_uri: `${issuer}/api/oauth2/jwks`,
+    token_endpoint: `${api}/oauth2/token`,
+    userinfo_endpoint: `${api}/oauth2/userinfo`,
+    jwks_uri: `${api}/oauth2/jwks`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code"],
     code_challenge_methods_supported: ["S256"],
