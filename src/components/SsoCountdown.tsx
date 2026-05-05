@@ -18,8 +18,7 @@ interface Props {
  * timer between ticks — the previous pattern (`setTimeout` + `[remaining]`
  * deps) could leave the UI stuck (e.g. on "2…") after the first decrement.
  *
- * No-JS fallback: a `<meta http-equiv="refresh">` rendered server-side
- * by the parent page ensures the redirect still happens.
+ * No-JS: users follow the parent page's primary link ("Continue now").
  */
 export function SsoCountdown({ to, seconds = 3 }: Props) {
   const [remaining, setRemaining] = useState(seconds);

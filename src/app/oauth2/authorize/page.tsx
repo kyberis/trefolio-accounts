@@ -216,7 +216,6 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         cb.searchParams.set("code", code);
         if (sp.state) cb.searchParams.set("state", sp.state);
         const callbackUrl = cb.toString();
-        const metaRefreshContent = `${SSO_REDIRECT_SECONDS};url=${callbackUrl.replace(/&/g, "&amp;")}`;
 
         // Build the "use a different account" return URL so the form action
         // can validate + bounce back to the same authorize request.
@@ -227,12 +226,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         const backUrl = `/oauth2/authorize?${sameAuthorize.toString()}`;
 
         return (
-          <>
-            <head>
-              <meta httpEquiv="refresh" content={metaRefreshContent} />
-            </head>
-            <div className="page-shell">
-            {/* No-JS fallback: meta refresh above; escaped & for valid HTML. */}
+          <div className="page-shell">
+            {/* Do not render <head> here: it would nest inside <body> and browsers
+                rewrite the DOM, breaking hydration. No-JS: use "Continue now" link;
+                with JS: SsoCountdown + meta refresh behavior via location.replace. */}
             <main className="page-main">
               <div className="card-narrow">
                 <div style={{ textAlign: "center" }}>
@@ -302,7 +299,6 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
               </p>
             )}
           </div>
-          </>
         );
       }
     }
