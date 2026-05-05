@@ -25,14 +25,22 @@ This project emulates `user.trefolio.com` on `http://localhost:3300`.
 
 ## Node.js and `better-sqlite3`
 
-This app loads **`better-sqlite3`** (native addon). The `.node` binary must match the **same major Node** you use for `npm install` / `npm run dev`.
+This app loads **`better-sqlite3`** (native addon). The `.node` binary must match the **exact Node.js ABI** you use for `npm install`, `npm rebuild`, and `npm run dev`.
 
-- If you see `NODE_MODULE_VERSION` mismatch (e.g. **127** vs **141**), you upgraded Node (e.g. 22 → 25) without rebuilding: run  
-  `npm rebuild better-sqlite3`  
-  (needs network the first time so `node-gyp` can fetch headers.)
-- Until prebuilt binaries exist for your Node version, the least-friction setup on macOS/Homebrew is **Node 22** for this repo only, e.g.  
-  `PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run dev`  
-  or `nvm use` / `fnm use` with the version in [`.nvmrc`](./.nvmrc).
+- If you see **`NODE_MODULE_VERSION` mismatch** (e.g. **108** vs **141**: addon built with Node **18**, runtime is Node **22+**), rebuild with the **same** `node` that runs Next:
+
+  ```bash
+  cd external/accounts   # or repo root if you cloned accounts standalone
+  export PATH="/opt/homebrew/bin:$PATH"   # example: prefer Homebrew’s current node over node@18 shims
+  node -p "process.version + ' module=' + process.versions.modules"
+  npm rebuild better-sqlite3
+  ```
+
+  **`PATH` pitfall:** `PATH=/foo/bar cd … && npm rebuild` only applies `PATH` to `cd`, not to `npm`. Either `export PATH=…` first in the shell or run `env PATH="/opt/homebrew/bin:$PATH" npm rebuild better-sqlite3` from this directory.
+
+- After **any** Node major upgrade/downgrade, run `npm rebuild better-sqlite3` again (or delete `node_modules` and `npm install`).
+
+- On macOS/Homebrew, **Node 22** ([`.nvmrc`](./.nvmrc)) keeps parity with the rest of the trefolio stack; point `PATH` at that binary if multiple Nodes are installed.
 
 ## Local setup
 
