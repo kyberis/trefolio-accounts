@@ -20,6 +20,7 @@ import {
   sessionCookieAttributes,
   signSession,
 } from "@/lib/session";
+import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,14 @@ export async function GET(req: NextRequest) {
           profile.emailVerified || user.email_verified === 1 ? 1 : 0,
       };
     } else {
+      if (isBlockedEmailDomain(profile.email)) {
+        const target = pending.client_id
+          ? rebuildAuthorizeUrl(pending, "blocked_email_domain")
+          : "/?err=blocked_email";
+        const res = NextResponse.redirect(new URL(target, req.url));
+        clearPendingCookie(res);
+        return res;
+      }
       user = await createUser({
         email: profile.email,
         name: profile.name || profile.email.split("@")[0],

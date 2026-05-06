@@ -38,6 +38,7 @@ import {
   signSession,
   verifySession,
 } from "@/lib/session";
+import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,8 @@ function authorizeErrorMessage(t: IdpUiCopy, sp: SP, code: string): string {
       return t.errPasswordTooShort;
     case "verification_email_failed":
       return t.errVerificationEmailFailed;
+    case "blocked_email_domain":
+      return t.errBlockedEmailDomain;
     case "invalid_client":
       return t.errInvalidClient;
     default:
@@ -212,6 +215,9 @@ async function handleSubmit(formData: FormData) {
   if (!user) {
     if (intent !== "signup") {
       redirectAuthorizeError(params, "invalid_credentials");
+    }
+    if (isBlockedEmailDomain(email)) {
+      redirectAuthorizeError(params, "blocked_email_domain");
     }
     if (!skipVerify) {
       const created = await createUser({

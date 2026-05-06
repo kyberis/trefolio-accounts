@@ -25,6 +25,7 @@ export type IdpUiCopy = {
   errPasswordMismatch: string;
   errPasswordTooShort: string;
   errVerificationEmailFailed: string;
+  errBlockedEmailDomain: string;
   errInvalidClient: string;
   dividerEmail: string;
   googleCta: string;
@@ -99,6 +100,8 @@ const en: IdpUiCopy & { email: IdpEmailStrings } = {
   errPasswordTooShort: "Password must be at least 8 characters.",
   errVerificationEmailFailed:
     "We couldn’t send the verification email. Check RESEND_API_KEY on the server or try again.",
+  errBlockedEmailDomain:
+    "Disposable email addresses are not allowed. Please use a real email.",
   errInvalidClient: "This sign-in link is invalid.",
   dividerEmail: "or with email",
   googleCta: "Continue with Google",
@@ -186,6 +189,8 @@ const de: IdpUiCopy & { email: IdpEmailStrings } = {
   errPasswordTooShort: "Das Passwort muss mindestens 8 Zeichen haben.",
   errVerificationEmailFailed:
     "Die Bestätigungs-E-Mail konnte nicht gesendet werden. Prüfe RESEND_API_KEY auf dem Server oder versuche es erneut.",
+  errBlockedEmailDomain:
+    "Wegwerf-E-Mail-Adressen sind nicht erlaubt. Bitte verwenden Sie eine echte E-Mail-Adresse.",
   errInvalidClient: "Dieser Anmeldelink ist ungültig.",
   dividerEmail: "oder mit E-Mail",
   googleCta: "Mit Google fortfahren",
@@ -273,6 +278,8 @@ const es: IdpUiCopy & { email: IdpEmailStrings } = {
   errPasswordTooShort: "La contraseña debe tener al menos 8 caracteres.",
   errVerificationEmailFailed:
     "No pudimos enviar el correo de verificación. Comprueba RESEND_API_KEY en el servidor o inténtalo de nuevo.",
+  errBlockedEmailDomain:
+    "No se permiten direcciones de correo desechables. Usa un correo real.",
   errInvalidClient: "Este enlace de acceso no es válido.",
   dividerEmail: "o con correo electrónico",
   googleCta: "Continuar con Google",
@@ -360,6 +367,8 @@ const fr: IdpUiCopy & { email: IdpEmailStrings } = {
   errPasswordTooShort: "Le mot de passe doit contenir au moins 8 caractères.",
   errVerificationEmailFailed:
     "Impossible d’envoyer l’e-mail de vérification. Vérifiez RESEND_API_KEY sur le serveur ou réessayez.",
+  errBlockedEmailDomain:
+    "Les adresses e-mail jetables ne sont pas autorisées. Utilisez une adresse réelle.",
   errInvalidClient: "Ce lien de connexion est invalide.",
   dividerEmail: "ou avec l’e-mail",
   googleCta: "Continuer avec Google",
@@ -447,6 +456,8 @@ const it: IdpUiCopy & { email: IdpEmailStrings } = {
   errPasswordTooShort: "La password deve avere almeno 8 caratteri.",
   errVerificationEmailFailed:
     "Impossibile inviare l’email di verifica. Controlla RESEND_API_KEY sul server o riprova.",
+  errBlockedEmailDomain:
+    "Gli indirizzi email usa e getta non sono consentiti. Usa un indirizzo email reale.",
   errInvalidClient: "Questo link di accesso non è valido.",
   dividerEmail: "oppure con email",
   googleCta: "Continua con Google",
