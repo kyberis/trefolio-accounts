@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMetadataApiOrigin, getRequestPublicIssuer } from "@/lib/public-url";
+import { getMetadataApiOrigin, getPublicIssuer, getRequestPublicIssuer } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const issuer = getRequestPublicIssuer(req);
+  // OIDC: `iss` in ID tokens MUST equal the `issuer` field here (OpenID Discovery).
+  // Use env-derived issuer only — not `getRequestPublicIssuer` alone — or Clara/NextAuth
+  // fetches discovery via HTTPS (forwarded host) while the token POST hits loopback
+  // (no forwarded host) and `openid-client` rejects the callback with OAuthCallbackError.
+  const issuerIdentifier = getPublicIssuer();
+  const browserBase = getRequestPublicIssuer(req);
   const api = getMetadataApiOrigin(req);
   return NextResponse.json({
-    issuer,
-    authorization_endpoint: `${issuer}/oauth2/authorize`,
+    issuer: issuerIdentifier,
+    authorization_endpoint: `${browserBase}/oauth2/authorize`,
     token_endpoint: `${api}/oauth2/token`,
     userinfo_endpoint: `${api}/oauth2/userinfo`,
     jwks_uri: `${api}/oauth2/jwks`,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumeAuthCode } from "@/lib/db";
 import { findClient, verifyPkce, buildIdToken } from "@/lib/oidc";
-import { getRequestPublicIssuer } from "@/lib/public-url";
+import { getPublicIssuer } from "@/lib/public-url";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -59,12 +59,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, { status: 400 });
   }
 
-  const issuer = getRequestPublicIssuer(req);
+  // Must match `issuer` in `/.well-known/openid-configuration` (see that route).
   const idToken = await buildIdToken({
     sub: stored.sub,
     aud: clientId,
     nonce: stored.nonce,
-    issuer,
+    issuer: getPublicIssuer(),
   });
   const accessToken = "dev-access-" + randomBytes(16).toString("base64url") + "." + stored.sub;
 

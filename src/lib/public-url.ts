@@ -4,8 +4,16 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+const PRODUCTION_IDP_ISSUER = "https://user.trefolio.com";
+const DEV_STACK_IDP_ISSUER = "https://user.trefolio-dev.com";
+
 /**
  * Env-only issuer for UI copy and code paths that have no Request (e.g. WebAuthn).
+ *
+ * **OIDC:** This string is the canonical `issuer` in discovery metadata and the
+ * `iss` claim in ID tokens. It must match what relying parties expect (`IDP_ISSUER`
+ * / browser-facing host). Do not rely on `X-Forwarded-Host` alone for JWT `iss` —
+ * token requests from apps often hit loopback without forwarded headers.
  */
 export function getPublicIssuer(): string {
   const raw =
@@ -13,7 +21,19 @@ export function getPublicIssuer(): string {
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_BASE_URL ||
     "http://localhost:3300";
-  return trimTrailingSlash(raw);
+  let out = trimTrailingSlash(raw);
+  // Local / preview: never advertise the production issuer from a non-production
+  // Node build — otherwise OIDC discovery (fetched over loopback from Clara, etc.)
+  // sends browsers to user.trefolio.com. Set IDP_ISSUER explicitly or
+  // IDP_ALLOW_PRODUCTION_ISSUER=true if you really need prod issuer in dev.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    out === PRODUCTION_IDP_ISSUER &&
+    process.env.IDP_ALLOW_PRODUCTION_ISSUER !== "true"
+  ) {
+    out = DEV_STACK_IDP_ISSUER;
+  }
+  return out;
 }
 
 /**
