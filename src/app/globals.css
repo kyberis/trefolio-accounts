@@ -328,6 +328,23 @@ a:hover {
   letter-spacing: 0.08em;
 }
 
+.divider .divider-link {
+  position: relative;
+  display: inline-block;
+  background: var(--surface);
+  padding: 0 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+
+.divider .divider-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 /* ─── buttons ──────────────────────────────────────────────────── */
 
 .btn {

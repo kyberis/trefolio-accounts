@@ -51,6 +51,19 @@ function buildGoogleStartUrl(sp: SP): string {
   return `/api/auth/google/start?${out.toString()}`;
 }
 
+/** Same authorize URL with signup mode (full registration form). Stale `error` is dropped. */
+function buildSignupAuthorizeUrl(sp: SP): string {
+  const out = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === "error") continue;
+    if (typeof v === "string" && v) out.set(k, v);
+  }
+  out.set("signup", "1");
+  if (!out.get("response_type")) out.set("response_type", "code");
+  if (!out.get("scope")) out.set("scope", "openid email profile");
+  return `/oauth2/authorize?${out.toString()}`;
+}
+
 function wantsSignupFirst(sp: SP): boolean {
   if ((sp.screen_hint || "").toLowerCase() === "signup") return true;
   return sp.signup === "1";
@@ -254,6 +267,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const appKey = appKeyFromHint(sp.app_hint || sp.client_id);
   const promptLogin = sp.prompt === "login";
   const signupFirst = wantsSignupFirst(sp);
+  const signupAuthorizeHref = validClient ? buildSignupAuthorizeUrl(sp) : "";
 
   // True SSO: existing IdP session → mint code and HTTP-redirect to the client's
   // callback (same as password login). Client-side countdown was unreliable across
@@ -472,26 +486,16 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                       Sign in
                     </button>
                     <div className="divider">
-                      <span>New here?</span>
+                      <a href={signupAuthorizeHref} className="divider-link">
+                        New here?
+                      </a>
                     </div>
-                    <label className="field">
-                      <span>Your name</span>
-                      <input
-                        name="name"
-                        type="text"
-                        autoComplete="name"
-                        placeholder="How should we call you?"
-                        className="input"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      name="intent"
-                      value="signup"
+                    <a
+                      href={signupAuthorizeHref}
                       className="btn btn-secondary btn-block"
                     >
                       Create a new account
-                    </button>
+                    </a>
                   </>
                 )}
               </form>
