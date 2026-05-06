@@ -63,6 +63,8 @@ These are **ignored by the OAuth protocol** but read by this app’s `/oauth2/au
 | `app_hint` | `trefolio` · `clara` · `will` — branding on the login/signup screen (falls back to `client_id`). |
 | `screen_hint=signup` | Opens **create-account-first** layout (equivalent: `signup=1`). |
 | `login_hint` | Pre-fills the email field. |
+| `ui_locales` | Space-separated BCP47 tags (e.g. `de en`) — IdP UI + verification email language; trefolio sends the browser’s preferred language when starting OIDC. |
+| `prompt=login` | Forces the password/passkey form even if an IdP session cookie exists. |
 
 Google and passkey side-trips stash these via the signed `oidc_pending` cookie so errors return you to the same mode.
 

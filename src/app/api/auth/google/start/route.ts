@@ -11,6 +11,7 @@ import {
   newCsrf,
   pendingCookieAttributes,
 } from "@/lib/oidc-pending";
+import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
       app_hint: sp.get("app_hint") || undefined,
       screen_hint: sp.get("screen_hint") || undefined,
       signup: sp.get("signup") || undefined,
+      ui_locale: normalizeIdpLocale(sp.get("ui_locale") || ""),
       csrf,
     });
     cookieValue = made.value;
@@ -78,7 +80,7 @@ export async function GET(req: NextRequest) {
     cookieValue = made.value;
   }
 
-  const url = googleAuthorizeUrl(csrf);
+  const url = googleAuthorizeUrl(csrf, normalizeIdpLocale(sp.get("ui_locale") || ""));
   const res = NextResponse.redirect(url);
   if (cookieValue) {
     const attrs = pendingCookieAttributes();

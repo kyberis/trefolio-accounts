@@ -87,9 +87,17 @@ export function AuthorizeBrandHeader({ app }: { app: AppKey }) {
 }
 
 /** Footer on `/oauth2/authorize`: legal links stay on trefolio.com (unified policy). */
-export function AuthorizePageFooter({ app }: { app: AppKey }) {
+export function AuthorizePageFooter(props: {
+  app: AppKey;
+  privacyLabel?: string;
+  termsLabel?: string;
+  contactLabel?: string;
+}) {
   const year = new Date().getFullYear();
-  const product = APP_LABEL[app];
+  const product = APP_LABEL[props.app];
+  const privacy = props.privacyLabel ?? "Privacy";
+  const terms = props.termsLabel ?? "Terms";
+  const contact = props.contactLabel ?? "Contact";
   return (
     <footer className="page-footer">
       <span>
@@ -97,15 +105,15 @@ export function AuthorizePageFooter({ app }: { app: AppKey }) {
       </span>
       <span className="footer-sep">·</span>
       <a href="https://trefolio.com/privacy" target="_blank" rel="noopener noreferrer">
-        Privacy
+        {privacy}
       </a>
       <span className="footer-sep">·</span>
       <a href="https://trefolio.com/terms" target="_blank" rel="noopener noreferrer">
-        Terms
+        {terms}
       </a>
       <span className="footer-sep">·</span>
       <a href="https://trefolio.com/contact" target="_blank" rel="noopener noreferrer">
-        Contact
+        {contact}
       </a>
     </footer>
   );

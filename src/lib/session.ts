@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { IDP_UI_LOCALE_COOKIE } from "@/lib/i18n/idp-locale";
+
 /**
  * IdP-side single-sign-on session cookie.
  *
@@ -99,4 +101,25 @@ export function sessionCookieAttributes(): {
   secure: boolean;
 } {
   return idpCookieAttributes(IDP_SESSION_COOKIE);
+}
+
+const UI_LOCALE_TTL = 60 * 60 * 24 * 365;
+
+/** UI + verification email language preference for the IdP (non-secret). */
+export function idpUiLocaleCookieAttributes(): {
+  name: string;
+  httpOnly: true;
+  sameSite: "lax";
+  path: "/";
+  maxAge: number;
+  secure: boolean;
+} {
+  return {
+    name: IDP_UI_LOCALE_COOKIE,
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: UI_LOCALE_TTL,
+    secure: process.env.NODE_ENV === "production",
+  };
 }

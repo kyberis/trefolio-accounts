@@ -67,6 +67,7 @@ export function buildOAuthResumeJson(sp: SP): string {
   if (sp.screen_hint) r.screen_hint = sp.screen_hint;
   if (sp.signup) r.signup = sp.signup;
   if (sp.prompt) r.prompt = sp.prompt;
+  if (sp.ui_locales) r.ui_locales = sp.ui_locales;
   return JSON.stringify(r);
 }
 

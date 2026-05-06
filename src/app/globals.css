@@ -124,6 +124,33 @@ a:hover {
   color: var(--border-strong);
 }
 
+/* IdP language picker (authorize + marketing home) */
+.idp-lang-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.idp-lang-switch-label {
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+.idp-lang-link {
+  color: var(--emerald-strong);
+  font-weight: 500;
+}
+
+.idp-lang-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ─── brand header (logo + name) ───────────────────────────────── */
 
 .brand-header {

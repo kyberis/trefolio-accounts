@@ -4,7 +4,22 @@ import { useEffect, useState } from "react";
 
 const COOLDOWN_SEC = 60;
 
-export function CheckEmailActions({ email }: { email: string }) {
+export type CheckEmailLabels = {
+  resendSent: string;
+  resendError: string;
+  resendSending: string;
+  resendCooldownPrefix: string;
+  resendCooldownSuffix: string;
+  resendButton: string;
+};
+
+export function CheckEmailActions({
+  email,
+  labels,
+}: {
+  email: string;
+  labels: CheckEmailLabels;
+}) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,13 +44,13 @@ export function CheckEmailActions({ email }: { email: string }) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error || "Could not resend.");
+        setError(data.error || labels.resendError);
         return;
       }
       setSent(true);
       setCooldown(COOLDOWN_SEC);
     } catch {
-      setError("Could not resend.");
+      setError(labels.resendError);
     } finally {
       setSending(false);
     }
@@ -45,7 +60,7 @@ export function CheckEmailActions({ email }: { email: string }) {
     <div className="form-stack" style={{ gap: 12 }}>
       {sent ? (
         <div className="alert alert-success" style={{ margin: 0 }}>
-          Verification email sent again.
+          {labels.resendSent}
         </div>
       ) : null}
       {error ? (
@@ -60,10 +75,10 @@ export function CheckEmailActions({ email }: { email: string }) {
         disabled={sending || cooldown > 0}
       >
         {sending
-          ? "Sending…"
+          ? labels.resendSending
           : cooldown > 0
-            ? `Resend available in ${cooldown}s`
-            : "Resend verification email"}
+            ? `${labels.resendCooldownPrefix} ${cooldown}${labels.resendCooldownSuffix}`
+            : labels.resendButton}
       </button>
     </div>
   );

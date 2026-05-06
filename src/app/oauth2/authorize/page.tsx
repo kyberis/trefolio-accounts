@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import bcrypt from "bcryptjs";
 import {
   AppIcon,
@@ -14,6 +14,7 @@ import {
   findUserByEmail,
   findUserBySub,
   saveAuthCode,
+  updateUserBySub,
 } from "@/lib/db";
 import { idpSkipsVerificationEmail } from "@/lib/idp-email-policy";
 import { sendIdpVerificationEmail } from "@/lib/idp-verification-email";
@@ -24,10 +25,14 @@ import {
 import type { SP } from "@/lib/oauth-resume";
 import { isGoogleConfigured } from "@/lib/google";
 import { getPublicIssuer } from "@/lib/public-url";
+import { normalizeIdpLocale, resolveIdpLocale } from "@/lib/i18n/idp-locale";
+import { getIdpUiCopy, type IdpUiCopy } from "@/lib/i18n/idp-messages";
 import { PasskeySignInButton } from "@/components/PasskeySignInButton";
 import { PasswordField } from "@/components/PasswordField";
+import { IdpLanguageSwitch } from "@/components/IdpLanguageSwitch";
 import {
   IDP_SESSION_COOKIE,
+  idpUiLocaleCookieAttributes,
   pendingResumeCookieAttributes,
   sessionCookieAttributes,
   signSession,
@@ -43,11 +48,12 @@ const isProd = process.env.NODE_ENV === "production";
  * every in-flight OIDC param so the Google callback can resume the flow
  * via the `oidc_pending` cookie.
  */
-function buildGoogleStartUrl(sp: SP): string {
+function buildGoogleStartUrl(sp: SP, uiLocale: string): string {
   const out = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) {
     if (typeof v === "string" && v) out.set(k, v);
   }
+  out.set("ui_locale", uiLocale);
   return `/api/auth/google/start?${out.toString()}`;
 }
 
@@ -61,12 +67,41 @@ function buildSignupAuthorizeUrl(sp: SP): string {
   out.set("signup", "1");
   if (!out.get("response_type")) out.set("response_type", "code");
   if (!out.get("scope")) out.set("scope", "openid email profile");
+  if (sp.ui_locales) out.set("ui_locales", sp.ui_locales);
   return `/oauth2/authorize?${out.toString()}`;
 }
 
 function wantsSignupFirst(sp: SP): boolean {
   if ((sp.screen_hint || "").toLowerCase() === "signup") return true;
   return sp.signup === "1";
+}
+
+function authorizeSpToPath(sp: SP): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === "error") continue;
+    if (typeof v === "string" && v.trim()) u.set(k, v);
+  }
+  const s = u.toString();
+  return s ? `/oauth2/authorize?${s}` : "/oauth2/authorize";
+}
+
+function authorizeErrorMessage(t: IdpUiCopy, sp: SP, code: string): string {
+  const signupFirst = wantsSignupFirst(sp);
+  switch (code) {
+    case "invalid_credentials":
+      return signupFirst ? t.errInvalidCredentialsSignup : t.errInvalidCredentialsLogin;
+    case "password_mismatch":
+      return t.errPasswordMismatch;
+    case "password_too_short":
+      return t.errPasswordTooShort;
+    case "verification_email_failed":
+      return t.errVerificationEmailFailed;
+    case "invalid_client":
+      return t.errInvalidClient;
+    default:
+      return code;
+  }
 }
 
 function GoogleGlyph() {
@@ -99,6 +134,7 @@ function GoogleGlyph() {
 }
 
 function readOidcParamsFromForm(formData: FormData): SP {
+  const loc = normalizeIdpLocale(String(formData.get("__locale") || ""));
   return {
     client_id: String(formData.get("__client_id") || ""),
     redirect_uri: String(formData.get("__redirect_uri") || ""),
@@ -112,6 +148,7 @@ function readOidcParamsFromForm(formData: FormData): SP {
     screen_hint: String(formData.get("__screen_hint") || "") || undefined,
     signup: String(formData.get("__signup") || "") || undefined,
     prompt: String(formData.get("__prompt") || "") || undefined,
+    ui_locales: loc,
   };
 }
 
@@ -129,6 +166,7 @@ function redirectAuthorizeError(sp: SP, error: string) {
   if (sp.screen_hint) usp.set("screen_hint", sp.screen_hint);
   if (sp.signup) usp.set("signup", sp.signup);
   if (sp.prompt) usp.set("prompt", sp.prompt);
+  if (sp.ui_locales) usp.set("ui_locales", sp.ui_locales);
   usp.set("error", error);
   redirect(`/oauth2/authorize?${usp.toString()}`);
 }
@@ -141,6 +179,17 @@ async function handleSubmit(formData: FormData) {
   const passwordConfirm = String(formData.get("password_confirm") || "");
   const name = String(formData.get("name") || "");
   const params = readOidcParamsFromForm(formData);
+  const formLocale = normalizeIdpLocale(params.ui_locales);
+  const cookieStoreLocale = await cookies();
+  const uiA = idpUiLocaleCookieAttributes();
+  cookieStoreLocale.set(uiA.name, formLocale, {
+    httpOnly: uiA.httpOnly,
+    sameSite: uiA.sameSite,
+    path: uiA.path,
+    maxAge: uiA.maxAge,
+    secure: uiA.secure,
+  });
+
   const skipVerify = idpSkipsVerificationEmail();
   const resumeJson = buildOAuthResumeJson(params);
 
@@ -170,13 +219,14 @@ async function handleSubmit(formData: FormData) {
         name: name || email.split("@")[0],
         passwordPlain: password,
         emailVerified: false,
+        locale: formLocale,
       });
       const token = await createIdpEmailVerificationJwt({
         sub: created.sub,
         email: created.email,
         resumeJson,
       });
-      const sent = await sendIdpVerificationEmail(created.email, token);
+      const sent = await sendIdpVerificationEmail(created.email, token, formLocale);
       if (!sent.success) {
         await deleteUserBySub(created.sub);
         redirectAuthorizeError(params, "verification_email_failed");
@@ -197,6 +247,7 @@ async function handleSubmit(formData: FormData) {
       name: name || email.split("@")[0],
       passwordPlain: password,
       emailVerified: true,
+      locale: formLocale,
     });
   } else {
     let valid = false;
@@ -211,12 +262,13 @@ async function handleSubmit(formData: FormData) {
   }
 
   if (!skipVerify && user.email_verified !== 1) {
+    await updateUserBySub(user.sub, { locale: formLocale });
     const token = await createIdpEmailVerificationJwt({
       sub: user.sub,
       email: user.email,
       resumeJson,
     });
-    const sent = await sendIdpVerificationEmail(user.email, token);
+    const sent = await sendIdpVerificationEmail(user.email, token, formLocale);
     if (!sent.success) {
       redirectAuthorizeError(params, "verification_email_failed");
     }
@@ -261,6 +313,15 @@ async function handleSubmit(formData: FormData) {
 
 export default async function AuthorizePage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
+  const hdrs = await headers();
+  const jar = await cookies();
+  const locale = resolveIdpLocale({
+    uiLocalesParam: sp.ui_locales,
+    cookieLocale: jar.get(idpUiLocaleCookieAttributes().name)?.value ?? null,
+    acceptLanguage: hdrs.get("accept-language"),
+  });
+  const t = getIdpUiCopy(locale);
+  const nextPath = authorizeSpToPath(sp);
   const client = findClient(sp.client_id || "");
   const validClient =
     client && sp.redirect_uri && client.redirectUris.includes(sp.redirect_uri);
@@ -301,16 +362,13 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     <div className="page-shell" data-authorize-app={appKey}>
       <main className="page-main">
         <div className="card-narrow">
+          <IdpLanguageSwitch nextPath={nextPath} current={locale} label={t.languageLabel} />
           <div style={{ textAlign: "center" }}>
             <AuthorizeBrandHeader app={appKey} />
           </div>
           <div className="heading-stack">
-            <h1>{signupFirst ? "Create your account" : "Welcome back"}</h1>
-            <p>
-              {signupFirst
-                ? "One password for trefolio, Clara, and Will."
-                : "Sign in with your trefolio account"}
-            </p>
+            <h1>{signupFirst ? t.headingSignup : t.headingLogin}</h1>
+            <p>{signupFirst ? t.subtitleSignup : t.subtitleLogin}</p>
           </div>
 
           <div className="card">
@@ -318,38 +376,26 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
               <div className="continue-pill">
                 <AppIcon app={appKey} size={22} />
                 <span>
-                  Continue to <strong>{client!.name}</strong>
+                  {t.continueToPrefix} <strong>{client!.name}</strong>
                 </span>
               </div>
             )}
 
             {!validClient && (
               <div className="alert alert-warning" style={{ marginBottom: 16 }}>
-                This sign-in link is invalid or expired. Please open the app you came from and try
-                again.
+                {t.invalidClientBanner}
               </div>
             )}
 
             {sp.error && (
               <div className="alert alert-error" style={{ marginBottom: 16 }}>
-                {sp.error === "invalid_credentials"
-                  ? signupFirst
-                    ? "This email already has an account. Enter your password to continue, or sign in with Google."
-                    : "Email or password is incorrect."
-                  : sp.error === "password_mismatch"
-                    ? "Passwords do not match. Type the same password twice."
-                    : sp.error === "password_too_short"
-                      ? "Password must be at least 8 characters."
-                      : sp.error === "verification_email_failed"
-                        ? "We couldn’t send the verification email. Check RESEND_API_KEY on the server or try again."
-                        : sp.error === "invalid_client"
-                        ? "This sign-in link is invalid."
-                        : sp.error}
+                {authorizeErrorMessage(t, sp, sp.error)}
               </div>
             )}
 
             {validClient && (
               <form action={handleSubmit} className="form-stack">
+                <input type="hidden" name="__locale" value={locale} />
                 <input type="hidden" name="__client_id" value={sp.client_id || ""} />
                 <input type="hidden" name="__redirect_uri" value={sp.redirect_uri || ""} />
                 <input type="hidden" name="__state" value={sp.state || ""} />
@@ -368,11 +414,11 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                 <div className="form-stack" style={{ gap: 8, marginBottom: 4 }}>
                   {isGoogleConfigured() && (
                     <a
-                      href={buildGoogleStartUrl(sp)}
+                      href={buildGoogleStartUrl(sp, locale)}
                       className="btn btn-google btn-block"
                     >
                       <GoogleGlyph />
-                      <span>Continue with Google</span>
+                      <span>{t.googleCta}</span>
                     </a>
                   )}
                   <PasskeySignInButton
@@ -383,53 +429,55 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                     codeChallenge={sp.code_challenge || ""}
                     codeChallengeMethod={sp.code_challenge_method || "S256"}
                     appHint={sp.app_hint || ""}
+                    passkeyLabel={t.passkeySignIn}
+                    passkeyWaitingLabel={t.passkeyWaiting}
                   />
                   <div className="divider">
-                    <span>or with email</span>
+                    <span>{t.dividerEmail}</span>
                   </div>
                 </div>
 
                 {signupFirst ? (
                   <>
                     <label className="field">
-                      <span>Your name</span>
+                      <span>{t.nameLabel}</span>
                       <input
                         name="name"
                         type="text"
                         autoComplete="name"
-                        placeholder="How should we call you?"
+                        placeholder={t.namePlaceholder}
                         className="input"
                       />
                     </label>
                     <label className="field">
-                      <span>Email</span>
+                      <span>{t.emailLabel}</span>
                       <input
                         name="email"
                         type="email"
                         autoComplete="email"
                         required
-                        placeholder="you@example.com"
+                        placeholder={t.emailPlaceholder}
                         defaultValue={isProd ? "" : "dev@trefolio.test"}
                         className="input"
                       />
                     </label>
                     <label className="field">
-                      <span>Password</span>
+                      <span>{t.passwordLabel}</span>
                       <PasswordField
                         name="password"
                         autoComplete="new-password"
                         required
-                        placeholder="At least 8 characters"
+                        placeholder={t.passwordPlaceholderNew}
                         defaultValue={isProd ? "" : "password123"}
                       />
                     </label>
                     <label className="field">
-                      <span>Repeat password</span>
+                      <span>{t.passwordRepeat}</span>
                       <PasswordField
                         name="password_confirm"
                         autoComplete="new-password"
                         required
-                        placeholder="Same as above"
+                        placeholder={t.passwordRepeatPlaceholder}
                         defaultValue={isProd ? "" : "password123"}
                       />
                     </label>
@@ -439,10 +487,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                       value="signup"
                       className="btn btn-primary btn-block"
                     >
-                      Create a new account
+                      {t.createAccount}
                     </button>
                     <div className="divider">
-                      <span>Already have an account?</span>
+                      <span>{t.alreadyHaveAccount}</span>
                     </div>
                     <button
                       type="submit"
@@ -450,30 +498,30 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                       value="login"
                       className="btn btn-secondary btn-block"
                     >
-                      Sign in
+                      {t.signIn}
                     </button>
                   </>
                 ) : (
                   <>
                     <label className="field">
-                      <span>Email</span>
+                      <span>{t.emailLabel}</span>
                       <input
                         name="email"
                         type="email"
                         autoComplete="email"
                         required
-                        placeholder="you@example.com"
+                        placeholder={t.emailPlaceholder}
                         defaultValue={isProd ? "" : "dev@trefolio.test"}
                         className="input"
                       />
                     </label>
                     <label className="field">
-                      <span>Password</span>
+                      <span>{t.passwordLabel}</span>
                       <PasswordField
                         name="password"
                         autoComplete="current-password"
                         required
-                        placeholder="••••••••"
+                        placeholder={t.passwordPlaceholderLogin}
                         defaultValue={isProd ? "" : "password123"}
                       />
                     </label>
@@ -483,18 +531,18 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                       value="login"
                       className="btn btn-primary btn-block"
                     >
-                      Sign in
+                      {t.signInButton}
                     </button>
                     <div className="divider">
                       <a href={signupAuthorizeHref} className="divider-link">
-                        New here?
+                        {t.newHere}
                       </a>
                     </div>
                     <a
                       href={signupAuthorizeHref}
                       className="btn btn-secondary btn-block"
                     >
-                      Create a new account
+                      {t.createNewAccount}
                     </a>
                   </>
                 )}
@@ -504,25 +552,30 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
 
           {!isProd && validClient && (
             <p className="legal" style={{ marginTop: 14 }}>
-              Dev seeds: <code>dev@trefolio.test</code> / <code>password123</code>
+              {t.devSeeds} <code>dev@trefolio.test</code> / <code>password123</code>
             </p>
           )}
 
           <p className="legal">
-            By continuing you agree to trefolio&apos;s{" "}
+            {t.legalIntro}{" "}
             <a href="https://trefolio.com/terms" target="_blank" rel="noopener noreferrer">
-              Terms
+              {t.legalTerms}
             </a>{" "}
-            and{" "}
+            {t.legalAnd}{" "}
             <a href="https://trefolio.com/privacy" target="_blank" rel="noopener noreferrer">
-              Privacy Policy
+              {t.legalPrivacy}
             </a>
             .
           </p>
         </div>
       </main>
 
-      <AuthorizePageFooter app={appKey} />
+      <AuthorizePageFooter
+        app={appKey}
+        privacyLabel={t.footerPrivacy}
+        termsLabel={t.footerTerms}
+        contactLabel={t.footerContact}
+      />
 
       {!isProd && (
         <p

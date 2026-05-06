@@ -11,6 +11,8 @@ interface Props {
   codeChallenge: string;
   codeChallengeMethod: string;
   appHint: string;
+  passkeyLabel?: string;
+  passkeyWaitingLabel?: string;
   /**
    * Where to navigate when the passkey verifies successfully **outside**
    * an OIDC flow (no `clientId`). Defaults to `/`.
@@ -34,6 +36,8 @@ export function PasskeySignInButton(props: Props) {
   const [supported, setSupported] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const signInLabel = props.passkeyLabel ?? "Sign in with a passkey";
+  const waitingLabel = props.passkeyWaitingLabel ?? "Waiting for passkey…";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -101,7 +105,7 @@ export function PasskeySignInButton(props: Props) {
         disabled={busy}
       >
         <KeyGlyph />
-        <span>{busy ? "Waiting for passkey…" : "Sign in with a passkey"}</span>
+        <span>{busy ? waitingLabel : signInLabel}</span>
       </button>
       {error && (
         <p

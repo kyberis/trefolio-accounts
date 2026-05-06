@@ -1,21 +1,13 @@
 import { Resend } from "resend";
 
+import { getIdpEmailStrings } from "@/lib/i18n/idp-messages";
+import type { IdpLocale } from "@/lib/i18n/idp-locale";
+import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
 import { getPublicIssuer } from "@/lib/public-url";
 import { idpSkipsVerificationEmail } from "@/lib/idp-email-policy";
 
 const LOGO_BASE =
   process.env.TREFOLIO_EMAIL_ASSETS_ORIGIN || "https://trefolio.com";
-
-/** English copy matches trefolio’s verification email; link points at this IdP. */
-const STRINGS = {
-  subject: "Verify your email — trefolio",
-  heading: "Verify your email address",
-  body: "Thanks for signing up! Please confirm your email to activate your trefolio account — one sign-in for trefolio, Clara, and Will.",
-  ctaLabel: "Verify Email",
-  fallbackLink: "Or copy and paste this link into your browser:",
-  expiry: "This link expires in 24 hours.",
-  ignore: "If you didn’t start creating a trefolio account, you can ignore this email.",
-} as const;
 
 function emailLogoCell(): string {
   return `<td style="width:36px;height:36px;vertical-align:middle;">
@@ -23,10 +15,10 @@ function emailLogoCell(): string {
 </td>`;
 }
 
-function verificationEmailHtml(verifyUrl: string): string {
-  const s = STRINGS;
+function verificationEmailHtml(verifyUrl: string, locale: IdpLocale): string {
+  const s = getIdpEmailStrings(locale);
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${s.htmlLang}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:40px 16px;">
@@ -60,7 +52,7 @@ function verificationEmailHtml(verifyUrl: string): string {
         </td></tr>
       </table>
       <p style="margin:24px 0 0;font-size:11px;color:#94a3b8;text-align:center;">
-        &copy; ${new Date().getFullYear()} trefolio — Every portfolio deserves a bit of luck &#x1F340;
+        &copy; ${new Date().getFullYear()} trefolio — ${s.footerLine}
       </p>
     </td></tr>
   </table>
@@ -75,10 +67,14 @@ function getFromAddress(): string {
 export async function sendIdpVerificationEmail(
   email: string,
   token: string,
+  localeInput?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (idpSkipsVerificationEmail()) {
     return { success: true };
   }
+
+  const locale = normalizeIdpLocale(localeInput);
+  const s = getIdpEmailStrings(locale);
 
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
@@ -90,13 +86,14 @@ export async function sendIdpVerificationEmail(
   const verifyUrl = `${issuer}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
 
   const resend = new Resend(apiKey);
+  const textBody = `${s.heading}\n\n${s.body}\n\n${verifyUrl}\n\n${s.expiry}\n\n${s.ignore}`;
   try {
     const { error } = await resend.emails.send({
       from: getFromAddress(),
       to: email,
-      subject: STRINGS.subject,
-      html: verificationEmailHtml(verifyUrl),
-      text: `${STRINGS.heading}\n\n${STRINGS.body}\n\n${verifyUrl}\n\n${STRINGS.expiry}`,
+      subject: s.subject,
+      html: verificationEmailHtml(verifyUrl, locale),
+      text: textBody,
     });
     if (error) return { success: false, error: error.message };
     return { success: true };

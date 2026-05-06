@@ -1,5 +1,11 @@
+import { cookies, headers } from "next/headers";
+
 import { AppIcon, Brand, PageFooter } from "@/components/Brand";
+import { IdpLanguageSwitch } from "@/components/IdpLanguageSwitch";
 import { listUsersWithEntitlements, setPlan, type SeedUserRow } from "@/lib/db";
+import { resolveIdpLocale } from "@/lib/i18n/idp-locale";
+import { getIdpUiCopy } from "@/lib/i18n/idp-messages";
+import { idpUiLocaleCookieAttributes } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -21,20 +27,25 @@ async function togglePlan(formData: FormData) {
 
 export default async function Home() {
   const users: SeedUserRow[] = isDevServer ? await listUsersWithEntitlements() : [];
+  const hdrs = await headers();
+  const jar = await cookies();
+  const locale = resolveIdpLocale({
+    cookieLocale: jar.get(idpUiLocaleCookieAttributes().name)?.value ?? null,
+    acceptLanguage: hdrs.get("accept-language"),
+  });
+  const t = getIdpUiCopy(locale);
 
   return (
     <div className="page-shell">
       <main className="page-main" style={{ flexDirection: "column", gap: 28 }}>
         <div className="card card-wide">
+          <IdpLanguageSwitch nextPath="/" current={locale} label={t.languageLabel} />
           <div style={{ textAlign: "center" }}>
             <Brand href="https://trefolio.com" />
           </div>
           <div className="heading-stack">
-            <h1>One account for trefolio, Clara, and Will.</h1>
-            <p>
-              You&apos;re on the trefolio identity service. Use your trefolio account to sign in
-              securely to all our products with the same email and password.
-            </p>
+            <h1>{t.homeTitle}</h1>
+            <p>{t.homeBody}</p>
           </div>
 
           <div className="agents-grid">
@@ -42,28 +53,29 @@ export default async function Home() {
               <AppIcon app="trefolio" size={32} />
               <div>
                 <h3>trefolio</h3>
-                <p>Portfolio dashboard</p>
+                <p>{t.productPortfolio}</p>
               </div>
             </div>
             <div className="agent-card">
               <AppIcon app="clara" size={32} />
               <div>
                 <h3>Clara</h3>
-                <p>Personal finance assistant</p>
+                <p>{t.productAssistant}</p>
               </div>
             </div>
             <div className="agent-card">
               <AppIcon app="will" size={32} />
               <div>
                 <h3>Will</h3>
-                <p>Smart notes assistant</p>
+                <p>{t.productNotes}</p>
               </div>
             </div>
           </div>
 
           <p className="legal" style={{ marginTop: 22 }}>
-            To sign in, open trefolio, Clara or Will and click <strong>Sign in</strong>. You&apos;ll
-            be brought back here to authenticate.
+            {t.homeSignInHintBefore}
+            <strong>{t.homeSignInCta}</strong>
+            {t.homeSignInHintAfter}
           </p>
         </div>
 

@@ -5,9 +5,13 @@ import { useEffect, useState } from "react";
 export function EmailConfirmedCountdown({
   nextPath,
   seconds,
+  countdownBefore,
+  countdownAfter,
 }: {
   nextPath: string;
   seconds: number;
+  countdownBefore: string;
+  countdownAfter: string;
 }) {
   const [remaining, setRemaining] = useState(seconds);
 
@@ -22,7 +26,8 @@ export function EmailConfirmedCountdown({
 
   return (
     <p className="legal" style={{ marginTop: 16, textAlign: "center" }}>
-      Continuing to your app in <strong>{Math.max(remaining, 0)}</strong>s…
+      {countdownBefore} <strong>{Math.max(remaining, 0)}</strong>
+      {countdownAfter}
     </p>
   );
 }

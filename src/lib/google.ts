@@ -38,7 +38,7 @@ export function getGoogleRedirectUri(): string {
  * account. `state` MUST match what we re-check on the callback to prevent
  * CSRF; we keep it opaque (random) and stash everything else in a cookie.
  */
-export function googleAuthorizeUrl(state: string): string {
+export function googleAuthorizeUrl(state: string, uiLocaleHint?: string): string {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: getGoogleRedirectUri(),
@@ -48,6 +48,10 @@ export function googleAuthorizeUrl(state: string): string {
     prompt: "select_account",
     access_type: "online",
   });
+  const hl = (uiLocaleHint || "").trim().toLowerCase();
+  if (hl === "de" || hl === "es" || hl === "fr" || hl === "it" || hl === "en") {
+    params.set("hl", hl);
+  }
   return `${GOOGLE_AUTHZ}?${params.toString()}`;
 }
 

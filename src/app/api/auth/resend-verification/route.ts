@@ -3,9 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findUserByEmail } from "@/lib/db";
 import { sendIdpVerificationEmail } from "@/lib/idp-verification-email";
 import { idpSkipsVerificationEmail } from "@/lib/idp-email-policy";
-import {
-  createIdpEmailVerificationJwt,
-} from "@/lib/idp-verification-token";
+import { createIdpEmailVerificationJwt } from "@/lib/idp-verification-token";
 import { cookies } from "next/headers";
 import { IDP_PENDING_OAUTH_RESUME_COOKIE } from "@/lib/session";
 
@@ -50,7 +48,7 @@ export async function POST(req: NextRequest) {
     resumeJson,
   });
 
-  const sent = await sendIdpVerificationEmail(user.email, token);
+  const sent = await sendIdpVerificationEmail(user.email, token, user.locale);
   if (!sent.success) {
     return NextResponse.json(
       { error: sent.error || "send_failed" },

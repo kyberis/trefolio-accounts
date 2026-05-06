@@ -17,4 +17,6 @@ export interface SP {
   /** OAuth authorize round-trip error code (display only). */
   error?: string;
   prompt?: string;
+  /** OIDC optional end-user languages (space-separated BCP47 tags). */
+  ui_locales?: string;
 }

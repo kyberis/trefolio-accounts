@@ -42,6 +42,8 @@ export interface PendingOidc {
   screen_hint?: string;
   /** IdP authorize UI: "1" = signup-first (alias of screen_hint=signup). */
   signup?: string;
+  /** Preferred UI language for this pending flow (en, de, es, fr, it). */
+  ui_locale?: string;
   /** epoch seconds */
   exp: number;
   csrf: string;
@@ -64,6 +66,7 @@ export function makePending(
     app_hint: args.app_hint,
     screen_hint: args.screen_hint,
     signup: args.signup,
+    ui_locale: args.ui_locale,
     exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
     csrf: args.csrf ?? newCsrf(),
   };

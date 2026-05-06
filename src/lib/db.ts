@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { Pool } from "pg";
 
+import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
+
 const postgresUrl = process.env.DATABASE_URL ?? "";
 const usePostgres =
   postgresUrl.startsWith("postgresql://") ||
@@ -36,6 +38,8 @@ export interface DbUser {
   google_id: string | null;
   apple_id: string | null;
   email_verified: number;
+  /** BCP47 primary language tag for UI + transactional email (en, de, es, fr, it). */
+  locale: string;
 }
 
 export interface SeedUserRow {
@@ -76,6 +80,7 @@ function sqliteRowToUser(row: any): DbUser {
     google_id: row.google_id ?? null,
     apple_id: row.apple_id ?? null,
     email_verified: Number(row.email_verified ?? 0) ? 1 : 0,
+    locale: String(row.locale ?? "en"),
   };
 }
 
@@ -89,6 +94,7 @@ function pgRowToUser(row: any): DbUser {
     google_id: row.google_id ?? null,
     apple_id: row.apple_id ?? null,
     email_verified: row.email_verified ? 1 : 0,
+    locale: String(row.locale ?? "en"),
   };
 }
 
@@ -122,8 +128,10 @@ async function ensurePostgresSchema(): Promise<void> {
           google_id TEXT UNIQUE,
           apple_id TEXT UNIQUE,
           email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+          locale TEXT NOT NULL DEFAULT 'en',
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en';
         CREATE TABLE IF NOT EXISTS entitlements (
           sub TEXT PRIMARY KEY,
           plan TEXT NOT NULL DEFAULT 'free',
@@ -194,6 +202,7 @@ function getSqliteDb(): Database.Database {
       google_id TEXT,
       apple_id TEXT,
       email_verified INTEGER NOT NULL DEFAULT 0,
+      locale TEXT NOT NULL DEFAULT 'en',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS entitlements (
@@ -237,6 +246,7 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN google_id TEXT`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN apple_id TEXT`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -301,7 +311,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE email = $1`,
       [normalized],
     );
@@ -310,7 +320,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE email = ?`,
     )
     .get(normalized) as any;
@@ -321,7 +331,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE google_id = $1`,
       [googleId],
     );
@@ -329,7 +339,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   }
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE google_id = ?`,
     )
     .get(googleId) as any;
@@ -340,7 +350,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE sub = $1`,
       [sub],
     );
@@ -349,7 +359,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
        FROM users WHERE sub = ?`,
     )
     .get(sub) as any;
@@ -420,19 +430,21 @@ export async function createUser(args: {
   googleId?: string;
   appleId?: string;
   emailVerified?: boolean;
+  locale?: string;
 }): Promise<DbUser> {
   const sub = newSub();
   const email = args.email.trim().toLowerCase();
   const passwordPlain = args.passwordPlain ?? "";
   const passwordHash = args.passwordHash ?? "";
+  const locale = normalizeIdpLocale(args.locale);
 
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale`,
       [
         sub,
         email,
@@ -442,6 +454,7 @@ export async function createUser(args: {
         args.googleId ?? null,
         args.appleId ?? null,
         Boolean(args.emailVerified),
+        locale,
       ],
     );
     await getPool().query(
@@ -455,8 +468,8 @@ export async function createUser(args: {
   getSqliteDb()
     .prepare(
       `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       sub,
@@ -467,6 +480,7 @@ export async function createUser(args: {
       args.googleId ?? null,
       args.appleId ?? null,
       args.emailVerified ? 1 : 0,
+      locale,
     );
   getSqliteDb().prepare(`INSERT INTO entitlements (sub, plan) VALUES (?, 'free')`).run(sub);
   return {
@@ -478,6 +492,7 @@ export async function createUser(args: {
     google_id: args.googleId ?? null,
     apple_id: args.appleId ?? null,
     email_verified: args.emailVerified ? 1 : 0,
+    locale,
   };
 }
 
@@ -492,6 +507,7 @@ export async function updateUserBySub(
       | "google_id"
       | "apple_id"
       | "email_verified"
+      | "locale"
     >
   >,
 ): Promise<void> {
@@ -522,6 +538,10 @@ export async function updateUserBySub(
     if (patch.email_verified !== undefined) {
       values.push(Boolean(patch.email_verified));
       sets.push(`email_verified = $${values.length}`);
+    }
+    if (patch.locale !== undefined) {
+      values.push(patch.locale);
+      sets.push(`locale = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(sub);
@@ -557,6 +577,10 @@ export async function updateUserBySub(
   if (patch.email_verified !== undefined) {
     sets.push("email_verified = ?");
     args.push(patch.email_verified);
+  }
+  if (patch.locale !== undefined) {
+    sets.push("locale = ?");
+    args.push(patch.locale);
   }
   if (sets.length === 0) return;
   args.push(sub);

@@ -9,6 +9,7 @@ import {
 } from "@/lib/db";
 import { exchangeGoogleCode, isGoogleConfigured } from "@/lib/google";
 import { findClient, newAuthCode } from "@/lib/oidc";
+import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
 import {
   OIDC_PENDING_COOKIE,
   pendingCookieAttributes,
@@ -116,6 +117,7 @@ export async function GET(req: NextRequest) {
         name: profile.name || profile.email.split("@")[0],
         googleId: profile.sub,
         emailVerified: profile.emailVerified,
+        locale: normalizeIdpLocale(pending.ui_locale),
       });
     }
   }
@@ -175,6 +177,7 @@ function rebuildAuthorizeUrl(
   if (pending.app_hint) sp.set("app_hint", pending.app_hint);
   if (pending.screen_hint) sp.set("screen_hint", pending.screen_hint);
   if (pending.signup) sp.set("signup", pending.signup);
+  if (pending.ui_locale) sp.set("ui_locales", pending.ui_locale);
   sp.set("error", error);
   return `/oauth2/authorize?${sp.toString()}`;
 }
