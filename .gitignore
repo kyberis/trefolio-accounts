@@ -5,7 +5,8 @@ node_modules/
 *.db-wal
 *.db-shm
 .env.local
-.npmrc
+# Optional local-only overrides; committed `.npmrc` pins the public registry.
+.npmrc.local
 idp-private.pem
 idp-public.pem
 .vercel
