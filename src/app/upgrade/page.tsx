@@ -35,8 +35,20 @@ export default async function UpgradePage({
     typeof searchParams.interval === "string" ? searchParams.interval : undefined,
   );
   const billingRaw = typeof searchParams.billing === "string" ? searchParams.billing : "";
-  const billingFlash =
-    billingRaw === "success" ? "success" : billingRaw === "cancelled" ? "cancelled" : null;
+  const billingFlash:
+    | "success"
+    | "cancelled"
+    | "portal_return"
+    | null =
+    billingRaw === "success"
+      ? "success"
+      : billingRaw === "cancelled"
+        ? "cancelled"
+        : billingRaw === "portal_return"
+          ? "portal_return"
+          : null;
+  const skipLanding =
+    typeof searchParams.skipLanding === "string" && searchParams.skipLanding === "1";
 
   const jar = await cookies();
   const sub = verifySession(jar.get(IDP_SESSION_COOKIE)?.value);
@@ -79,6 +91,15 @@ export default async function UpgradePage({
   const isPro =
     ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
 
+  const productTargets = getProductTargets().map((t) => ({
+    app: t.app,
+    label: t.label,
+    baseUrl: t.baseUrl,
+  }));
+
+  const showProductLanding =
+    FROM_ALLOWED.has(from) && !billingFlash && !skipLanding && !isPro;
+
   return (
     <div className="page-shell">
       <main className="page-main" style={{ flexDirection: "column", gap: 24 }}>
@@ -98,6 +119,8 @@ export default async function UpgradePage({
             initialIsPro={isPro}
             billingFlash={billingFlash}
             initialInterval={intervalHint ?? undefined}
+            showProductLanding={showProductLanding}
+            productTargets={productTargets}
           />
         </div>
       </main>

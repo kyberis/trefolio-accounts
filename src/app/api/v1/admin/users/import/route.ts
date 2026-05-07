@@ -5,7 +5,9 @@ import {
   setPlan,
   getEntitlement,
   updateUserBySub,
+  upsertStripeCustomerRow,
 } from "@/lib/db";
+import { fetchStripeSubscriptionSnapshotForImport } from "@/lib/idp-stripe-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,11 @@ export async function POST(req: NextRequest) {
   const current = await getEntitlement(user.sub);
   const incomingPlan = body.plan === "pro" ? "pro" : "free";
 
+  const stripeCustomerId =
+    typeof body.stripeCustomerId === "string" ? body.stripeCustomerId.trim() : "";
+  const stripeSubscriptionId =
+    typeof body.stripeSubscriptionId === "string" ? body.stripeSubscriptionId.trim() : "";
+
   if (
     body.plan === "free" &&
     current.plan === "pro" &&
@@ -87,13 +94,35 @@ export async function POST(req: NextRequest) {
     current.plan === "pro" || incomingPlan === "pro" ? "pro" : "free";
   const incomingUntil =
     body.proUntil || body.planExpiresAt ? String(body.proUntil || body.planExpiresAt) : null;
-  const resolvedUntil =
+  let resolvedUntil =
     resolvedPlan === "pro" ? maxIso(current.pro_until, incomingUntil) : null;
-  if (
+
+  let snapshot = null as Awaited<ReturnType<typeof fetchStripeSubscriptionSnapshotForImport>>;
+  if (stripeCustomerId) {
+    snapshot = await fetchStripeSubscriptionSnapshotForImport({
+      stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId || null,
+    });
+    if (snapshot?.currentPeriodEnd && resolvedPlan === "pro") {
+      resolvedUntil = snapshot.currentPeriodEnd.toISOString();
+    }
+    await upsertStripeCustomerRow({
+      sub: user.sub,
+      stripeCustomerId,
+      stripeSubscriptionId: (snapshot?.stripeSubscriptionId ?? stripeSubscriptionId) || null,
+      currentPeriodEnd: snapshot?.currentPeriodEnd ?? (resolvedUntil ? new Date(resolvedUntil) : null),
+      cancelAtPeriodEnd: snapshot?.cancelAtPeriodEnd ?? false,
+    });
+  }
+
+  const entitlementSource = stripeCustomerId ? "stripe" : current.source ?? "import";
+  const needsEntitlementWrite =
     current.plan !== resolvedPlan ||
-    (resolvedUntil || "") !== (current.pro_until || "")
-  ) {
-    await setPlan(user.sub, resolvedPlan, resolvedUntil);
+    (resolvedUntil || "") !== (current.pro_until || "") ||
+    current.source !== entitlementSource;
+
+  if (needsEntitlementWrite) {
+    await setPlan(user.sub, resolvedPlan, resolvedUntil, entitlementSource);
   }
 
   return NextResponse.json({

@@ -65,6 +65,10 @@ export interface AdminUserRow {
   idp_auth_attempts: number;
   /** Subset of attempts that failed (wrong password, bad passkey, etc.). */
   idp_auth_failures: number;
+  /** Pending complimentary membership invitation (email + activate). */
+  membership_grant_pending: boolean;
+  membership_grant_days: number | null;
+  membership_grant_created_at: string | null;
 }
 
 export interface AdminUserListResult {
@@ -182,6 +186,23 @@ async function ensurePostgresSchema(): Promise<void> {
           cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS subscription_checkout_intents (
+          id BIGSERIAL PRIMARY KEY,
+          sub TEXT NOT NULL,
+          from_app TEXT NOT NULL DEFAULT '',
+          interval_hint TEXT,
+          user_agent TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS subscription_checkout_intents_created_idx
+          ON subscription_checkout_intents (created_at DESC);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_token TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_plan TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_days INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_created_at TIMESTAMPTZ;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_token TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_invited_at TIMESTAMPTZ;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_activated_at TIMESTAMPTZ;
       `);
     } finally {
       client.release();
@@ -264,6 +285,16 @@ function getSqliteDb(): Database.Database {
       cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS subscription_checkout_intents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sub TEXT NOT NULL,
+      from_app TEXT NOT NULL DEFAULT '',
+      interval_hint TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS subscription_checkout_intents_created_idx
+      ON subscription_checkout_intents (created_at DESC);
   `);
   safeAlter(db, `ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN google_id TEXT`);
@@ -272,6 +303,13 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN idp_auth_attempts INTEGER NOT NULL DEFAULT 0`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN idp_auth_failures INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN membership_grant_token TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN membership_grant_plan TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN membership_grant_days INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN membership_grant_created_at TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN trial_token TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN trial_invited_at TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN trial_activated_at TEXT NOT NULL DEFAULT ''`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -829,6 +867,9 @@ export async function listUsersForAdmin(args: {
         created_at: toIsoString(row.created_at),
         idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
         idp_auth_failures: Number(row.idp_auth_failures ?? 0),
+        membership_grant_pending: false,
+        membership_grant_days: null,
+        membership_grant_created_at: null,
       })),
       total: Number(count.rows[0]?.n ?? 0),
       page,
@@ -868,6 +909,9 @@ export async function listUsersForAdmin(args: {
       created_at: toIsoString(row.created_at),
       idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
       idp_auth_failures: Number(row.idp_auth_failures ?? 0),
+      membership_grant_pending: false,
+      membership_grant_days: null,
+      membership_grant_created_at: null,
     })),
     total: Number(total),
     page,
@@ -882,6 +926,10 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
               COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
+              COALESCE(u.membership_grant_token, '') AS membership_grant_token,
+              COALESCE(u.membership_grant_plan, '') AS membership_grant_plan,
+              COALESCE(u.membership_grant_days, 0)::int AS membership_grant_days,
+              u.membership_grant_created_at,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        WHERE u.sub = $1`,
@@ -889,6 +937,8 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     );
     const row = rows[0];
     if (!row) return null;
+    const tok = String(row.membership_grant_token ?? "").trim();
+    const pending = tok.length > 0;
     return {
       sub: String(row.sub),
       email: String(row.email),
@@ -902,6 +952,9 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       created_at: toIsoString(row.created_at),
       idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
       idp_auth_failures: Number(row.idp_auth_failures ?? 0),
+      membership_grant_pending: pending,
+      membership_grant_days: pending ? Number(row.membership_grant_days ?? 0) || null : null,
+      membership_grant_created_at: pending ? toIsoString(row.membership_grant_created_at) : null,
     };
   }
 
@@ -910,12 +963,18 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
               COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
+              COALESCE(u.membership_grant_token, '') AS membership_grant_token,
+              COALESCE(u.membership_grant_plan, '') AS membership_grant_plan,
+              COALESCE(u.membership_grant_days, 0) AS membership_grant_days,
+              u.membership_grant_created_at,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        WHERE u.sub = ?`,
     )
     .get(sub) as any;
   if (!row) return null;
+  const tok = String(row.membership_grant_token ?? "").trim();
+  const pending = tok.length > 0;
   return {
     sub: String(row.sub),
     email: String(row.email),
@@ -929,6 +988,9 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     created_at: toIsoString(row.created_at),
     idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
     idp_auth_failures: Number(row.idp_auth_failures ?? 0),
+    membership_grant_pending: pending,
+    membership_grant_days: pending ? Number(row.membership_grant_days ?? 0) || null : null,
+    membership_grant_created_at: pending ? toIsoString(row.membership_grant_created_at) : null,
   };
 }
 
@@ -1231,4 +1293,298 @@ export async function upsertStripeCustomerRow(args: {
       cpe,
       cancel ? 1 : 0,
     );
+}
+
+export const IDP_MEMBERSHIP_GRANT_MIN_DAYS = 1;
+export const IDP_MEMBERSHIP_GRANT_MAX_DAYS = 730;
+
+export async function logSubscriptionCheckoutIntent(args: {
+  sub: string;
+  fromApp: string;
+  intervalHint?: string | null;
+  userAgent?: string | null;
+}): Promise<void> {
+  const from = (args.fromApp || "").trim().slice(0, 64);
+  const interval = args.intervalHint?.trim().slice(0, 16) ?? null;
+  const ua = args.userAgent ? args.userAgent.trim().slice(0, 512) : null;
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `INSERT INTO subscription_checkout_intents (sub, from_app, interval_hint, user_agent)
+       VALUES ($1, $2, $3, $4)`,
+      [args.sub, from, interval, ua],
+    );
+    return;
+  }
+
+  getSqliteDb()
+    .prepare(
+      `INSERT INTO subscription_checkout_intents (sub, from_app, interval_hint, user_agent)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(args.sub, from, interval, ua);
+}
+
+export async function findSubByMembershipGrantToken(
+  token: string,
+): Promise<string | null> {
+  if (!token.trim()) return null;
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT sub FROM users WHERE membership_grant_token = $1 AND membership_grant_token != ''`,
+      [token.trim()],
+    );
+    return rows[0]?.sub ? String(rows[0].sub) : null;
+  }
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT sub FROM users WHERE membership_grant_token = ? AND membership_grant_token != ''`,
+    )
+    .get(token.trim()) as { sub: string } | undefined;
+  return row?.sub ? String(row.sub) : null;
+}
+
+export async function setPendingMembershipGrantIdp(
+  sub: string,
+  plan: "pro",
+  days: number,
+): Promise<{ token: string }> {
+  if (days < IDP_MEMBERSHIP_GRANT_MIN_DAYS || days > IDP_MEMBERSHIP_GRANT_MAX_DAYS) {
+    throw new Error("invalid_grant_days");
+  }
+  const token = randomBytes(32).toString("hex");
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE users SET
+         membership_grant_token = $1,
+         membership_grant_plan = $2,
+         membership_grant_days = $3,
+         membership_grant_created_at = NOW()
+       WHERE sub = $4`,
+      [token, plan, days, sub],
+    );
+    return { token };
+  }
+  getSqliteDb()
+    .prepare(
+      `UPDATE users SET
+         membership_grant_token = ?,
+         membership_grant_plan = ?,
+         membership_grant_days = ?,
+         membership_grant_created_at = datetime('now')
+       WHERE sub = ?`,
+    )
+    .run(token, plan, days, sub);
+  return { token };
+}
+
+export async function clearMembershipGrantFieldsIdp(sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE users SET
+         membership_grant_token = '',
+         membership_grant_plan = '',
+         membership_grant_days = 0,
+         membership_grant_created_at = NULL
+       WHERE sub = $1`,
+      [sub],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(
+      `UPDATE users SET
+         membership_grant_token = '',
+         membership_grant_plan = '',
+         membership_grant_days = 0,
+         membership_grant_created_at = ''
+       WHERE sub = ?`,
+    )
+    .run(sub);
+}
+
+/**
+ * Pro-until for a complimentary grant: stacks on top of existing future pro_until when same tier.
+ */
+async function computeMembershipGrantProUntil(sub: string, days: number): Promise<string> {
+  const ent = await getEntitlement(sub);
+  const now = Date.now();
+  const ms = days * 86400000;
+  if (
+    ent.plan === "pro" &&
+    ent.pro_until &&
+    !Number.isNaN(Date.parse(ent.pro_until)) &&
+    new Date(ent.pro_until).getTime() > now
+  ) {
+    return new Date(new Date(ent.pro_until).getTime() + ms).toISOString();
+  }
+  return new Date(now + ms).toISOString();
+}
+
+export async function applyPendingMembershipGrantIdp(
+  sessionSub: string,
+  token: string,
+): Promise<{ ok: true; proUntil: string } | { ok: false; error: string }> {
+  const t = token.trim();
+  if (!t) return { ok: false, error: "missing_token" };
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT membership_grant_token, membership_grant_plan, membership_grant_days
+       FROM users WHERE sub = $1`,
+      [sessionSub],
+    );
+    const row = rows[0];
+    if (!row || String(row.membership_grant_token ?? "") !== t) {
+      return { ok: false, error: "invalid_or_used_token" };
+    }
+    if (String(row.membership_grant_plan ?? "") !== "pro") {
+      return { ok: false, error: "no_pending_grant" };
+    }
+    const days = Number(row.membership_grant_days ?? 0);
+    if (days < IDP_MEMBERSHIP_GRANT_MIN_DAYS || days > IDP_MEMBERSHIP_GRANT_MAX_DAYS) {
+      return { ok: false, error: "invalid_grant" };
+    }
+    const proUntil = await computeMembershipGrantProUntil(sessionSub, days);
+    await clearMembershipGrantFieldsIdp(sessionSub);
+    await setPlan(sessionSub, "pro", proUntil, "membership-grant");
+    return { ok: true, proUntil };
+  }
+
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT membership_grant_token, membership_grant_plan, membership_grant_days FROM users WHERE sub = ?`,
+    )
+    .get(sessionSub) as any;
+  if (!row || String(row.membership_grant_token ?? "") !== t) {
+    return { ok: false, error: "invalid_or_used_token" };
+  }
+  if (String(row.membership_grant_plan ?? "") !== "pro") {
+    return { ok: false, error: "no_pending_grant" };
+  }
+  const days = Number(row.membership_grant_days ?? 0);
+  if (days < IDP_MEMBERSHIP_GRANT_MIN_DAYS || days > IDP_MEMBERSHIP_GRANT_MAX_DAYS) {
+    return { ok: false, error: "invalid_grant" };
+  }
+  const proUntil = await computeMembershipGrantProUntil(sessionSub, days);
+  await clearMembershipGrantFieldsIdp(sessionSub);
+  await setPlan(sessionSub, "pro", proUntil, "membership-grant");
+  return { ok: true, proUntil };
+}
+
+export type TrialTokenStatusIdp = "valid" | "already_used" | "invalid";
+
+export async function checkTrialTokenIdp(token: string): Promise<TrialTokenStatusIdp> {
+  const t = token.trim();
+  if (!t) return "invalid";
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT trial_activated_at FROM users WHERE trial_token = $1 AND trial_token != ''`,
+      [t],
+    );
+    const row = rows[0];
+    if (!row) return "invalid";
+    const activated = row.trial_activated_at;
+    if (activated != null && activated !== "") return "already_used";
+    return "valid";
+  }
+
+  const row = getSqliteDb()
+    .prepare(`SELECT trial_activated_at FROM users WHERE trial_token = ? AND trial_token != ''`)
+    .get(t) as { trial_activated_at?: string } | undefined;
+  if (!row) return "invalid";
+  const activated = String(row.trial_activated_at ?? "").trim();
+  return activated !== "" ? "already_used" : "valid";
+}
+
+export async function syncTrialTokenFromProductApp(
+  email: string,
+  trialToken: string,
+): Promise<{ ok: true } | { ok: false; error: "user_not_found" }> {
+  const normalized = email.trim().toLowerCase();
+  const tok = trialToken.trim();
+  if (!normalized || !tok) return { ok: false, error: "user_not_found" };
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const res = await getPool().query(
+      `UPDATE users SET
+         trial_token = $2,
+         trial_invited_at = COALESCE(trial_invited_at, NOW())
+       WHERE lower(email) = lower($1)`,
+      [normalized, tok],
+    );
+    if (res.rowCount === 0) return { ok: false, error: "user_not_found" };
+    return { ok: true };
+  }
+
+  const r = getSqliteDb()
+    .prepare(
+      `UPDATE users SET trial_token = ?, trial_invited_at = CASE WHEN trial_invited_at = '' THEN datetime('now') ELSE trial_invited_at END
+       WHERE lower(email) = lower(?)`,
+    )
+    .run(tok, normalized);
+  if (r.changes === 0) return { ok: false, error: "user_not_found" };
+  return { ok: true };
+}
+
+export async function activateTrialForSub(
+  sub: string,
+  token: string,
+): Promise<
+  | { ok: true; proUntil: string }
+  | { ok: false; error: "invalid_token" | "trial_already_activated" | "not_free" }
+> {
+  const t = token.trim();
+  if (!t) return { ok: false, error: "invalid_token" };
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT trial_token, trial_activated_at FROM users WHERE sub = $1`,
+      [sub],
+    );
+    const row = rows[0];
+    if (!row || String(row.trial_token ?? "").trim() !== t) {
+      return { ok: false, error: "invalid_token" };
+    }
+    if (row.trial_activated_at != null) {
+      return { ok: false, error: "trial_already_activated" };
+    }
+  } else {
+    const row = getSqliteDb()
+      .prepare(`SELECT trial_token, trial_activated_at FROM users WHERE sub = ?`)
+      .get(sub) as { trial_token?: string; trial_activated_at?: string } | undefined;
+    if (!row || String(row.trial_token ?? "").trim() !== t) {
+      return { ok: false, error: "invalid_token" };
+    }
+    if (String(row.trial_activated_at ?? "").trim() !== "") {
+      return { ok: false, error: "trial_already_activated" };
+    }
+  }
+
+  const ent = await getEntitlement(sub);
+  if (ent.plan !== "free") {
+    return { ok: false, error: "not_free" };
+  }
+
+  const proUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  await setPlan(sub, "pro", proUntil, "trial");
+
+  if (usePostgres) {
+    await getPool().query(`UPDATE users SET trial_activated_at = NOW() WHERE sub = $1`, [sub]);
+  } else {
+    getSqliteDb()
+      .prepare(`UPDATE users SET trial_activated_at = datetime('now') WHERE sub = ?`)
+      .run(sub);
+  }
+
+  return { ok: true, proUntil };
 }

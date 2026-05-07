@@ -6,12 +6,16 @@ import Link from "next/link";
 import { getIdpAdmin } from "@/lib/admin";
 import {
   deleteUserBySub,
+  findUserBySub,
   getAdminUserDetail,
   getEntitlement,
   getStripeCustomerBySub,
+  setPendingMembershipGrantIdp,
   setPlan,
   updateUserBySub,
 } from "@/lib/db";
+import { hasActiveManagedStripeSubscriptionIdp } from "@/lib/idp-stripe-subscription";
+import { sendIdpMembershipGrantEmail } from "@/lib/idp-membership-grant-email";
 import { impersonateUserAction } from "@/lib/idp-impersonation-actions";
 import { getProductTargets, probeProductLinks } from "@/lib/product-links";
 
@@ -91,22 +95,44 @@ async function deleteUserAction(formData: FormData) {
   redirect("/admin/users");
 }
 
+async function grantMembershipAction(formData: FormData) {
+  "use server";
+  const ctx = await getIdpAdmin();
+  if (!ctx) return;
+  const sub = String(formData.get("sub") || "");
+  const daysRaw = parseInt(String(formData.get("days") || "30"), 10);
+  const days = Math.min(730, Math.max(1, Number.isFinite(daysRaw) ? daysRaw : 30));
+  if (!sub) return;
+  if (await hasActiveManagedStripeSubscriptionIdp(sub)) {
+    redirect(`/admin/users/${encodeURIComponent(sub)}?grantError=stripe_active`);
+  }
+  const { token } = await setPendingMembershipGrantIdp(sub, "pro", days);
+  const u = await findUserBySub(sub);
+  if (!u) return;
+  await sendIdpMembershipGrantEmail({
+    to: u.email,
+    displayName: u.name,
+    locale: u.locale,
+    days,
+    token,
+  });
+  revalidatePath(`/admin/users/${sub}`);
+}
+
 export default async function AdminUserDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ sub: string }>;
-  searchParams: Promise<{ planError?: string }>;
+  searchParams: Promise<{ planError?: string; grantError?: string; billing?: string }>;
 }) {
   const { sub } = await params;
-  const { planError } = await searchParams;
+  const { planError, grantError, billing } = await searchParams;
   const user = await getAdminUserDetail(sub);
   if (!user) notFound();
 
   const stripeManagedPro = user.plan === "pro" && user.source === "stripe";
-  const stripeCustomer = stripeManagedPro
-    ? await getStripeCustomerBySub(user.sub)
-    : null;
+  const stripeRow = await getStripeCustomerBySub(user.sub);
 
   const [linksRaw, targets] = [
     await probeProductLinks({ sub: user.sub, email: user.email, timeoutMs: 2500 }),
@@ -274,15 +300,26 @@ export default async function AdminUserDetailPage({
               the subscription in Stripe (or wait until the webhook reflects cancellation).
             </p>
           )}
+          {grantError === "stripe_active" && (
+            <p className="card-subtitle" role="alert" style={{ color: "var(--warn, #c2410c)" }}>
+              Cannot send a complimentary grant while this user has an active Stripe subscription.
+              Use the billing portal or Stripe Dashboard first.
+            </p>
+          )}
+          {billing === "portal_return" && (
+            <p className="card-subtitle" role="status">
+              Returned from the Stripe billing portal. Changes may take a few seconds to sync.
+            </p>
+          )}
           {stripeManagedPro && (
             <p className="card-subtitle">
               Pro is billed via Stripe — use the Stripe Dashboard to cancel or refund; this form
               cannot downgrade to Free until Stripe no longer reports paid access.
-              {stripeCustomer?.stripe_customer_id && (
+              {stripeRow?.stripe_customer_id && (
                 <>
                   {" "}
                   <a
-                    href={`https://dashboard.stripe.com/customers/${stripeCustomer.stripe_customer_id}`}
+                    href={`https://dashboard.stripe.com/customers/${stripeRow.stripe_customer_id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -290,6 +327,16 @@ export default async function AdminUserDetailPage({
                   </a>
                 </>
               )}
+            </p>
+          )}
+          {stripeRow?.stripe_customer_id && (
+            <p className="card-subtitle">
+              <a
+                className="btn-mini"
+                href={`/api/admin/billing-portal?sub=${encodeURIComponent(user.sub)}`}
+              >
+                Open Stripe billing portal for this customer →
+              </a>
             </p>
           )}
           <form action={setPlanAction} className="form-stack">
@@ -316,6 +363,49 @@ export default async function AdminUserDetailPage({
               Save plan
             </button>
           </form>
+        </article>
+
+        <article className="card">
+          <h2 className="card-title">Grant membership (email + activate)</h2>
+          <p className="card-subtitle">
+            Sends an activation email; Pro applies on this IdP identity when the user confirms (same pattern as trefolio
+            admin).
+          </p>
+          {user.membership_grant_pending ? (
+            <p className="card-subtitle">
+              Pending invitation: {user.membership_grant_days ?? "—"} days
+              {user.membership_grant_created_at
+                ? ` · sent ${fmtDateTime(user.membership_grant_created_at)}`
+                : ""}
+            </p>
+          ) : null}
+          <form action={grantMembershipAction} className="form-stack">
+            <input type="hidden" name="sub" value={user.sub} />
+            <div className="admin-inline-form" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+              <span className="card-subtitle" style={{ margin: 0 }}>
+                Plan: <strong>Trefolio</strong> (Pro)
+              </span>
+              <label className="field" style={{ marginBottom: 0 }}>
+                <span>Days</span>
+                <input
+                  type="number"
+                  name="days"
+                  min={1}
+                  max={730}
+                  defaultValue={30}
+                  className="input"
+                  style={{ maxWidth: 120 }}
+                />
+              </label>
+              <button type="submit" className="btn btn-primary">
+                Send invitation
+              </button>
+            </div>
+          </form>
+          <p className="card-subtitle">
+            Sends an email in the user&apos;s language. The period starts when they activate. Blocked if Stripe
+            subscription is active.
+          </p>
         </article>
 
         <article className="card">
