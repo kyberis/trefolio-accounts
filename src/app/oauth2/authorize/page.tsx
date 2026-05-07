@@ -28,6 +28,8 @@ import type { SP } from "@/lib/oauth-resume";
 import { isGoogleConfigured } from "@/lib/google";
 import { getPublicIssuer } from "@/lib/public-url";
 import { normalizeIdpLocale, resolveIdpLocale } from "@/lib/i18n/idp-locale";
+import { TREFOLIO_UI_LOCALE_COOKIE } from "@/lib/i18n/ecosystem-ui-locale";
+import { persistTrefolioEcosystemUiLocaleCookie } from "@/lib/i18n/persist-trefolio-ui-locale-cookie";
 import { getIdpUiCopy, type IdpUiCopy } from "@/lib/i18n/idp-messages";
 import { PasskeySignInButton } from "@/components/PasskeySignInButton";
 import { PasswordField } from "@/components/PasswordField";
@@ -194,6 +196,7 @@ async function handleSubmit(formData: FormData) {
     maxAge: uiA.maxAge,
     secure: uiA.secure,
   });
+  await persistTrefolioEcosystemUiLocaleCookie(formLocale);
 
   const skipVerify = idpSkipsVerificationEmail();
   const resumeJson = buildOAuthResumeJson(params);
@@ -327,7 +330,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const jar = await cookies();
   const locale = resolveIdpLocale({
     uiLocalesParam: sp.ui_locales,
-    cookieLocale: jar.get(idpUiLocaleCookieAttributes().name)?.value ?? null,
+    cookieLocale:
+      jar.get(idpUiLocaleCookieAttributes().name)?.value ??
+      jar.get(TREFOLIO_UI_LOCALE_COOKIE)?.value ??
+      null,
     acceptLanguage: hdrs.get("accept-language"),
   });
   const t = getIdpUiCopy(locale);

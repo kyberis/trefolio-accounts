@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isIdpLocale } from "@/lib/i18n/idp-locale";
+import { appendTrefolioEcosystemUiLocaleCookieOnResponse } from "@/lib/i18n/append-trefolio-ecosystem-ui-locale-cookie";
 import { idpUiLocaleCookieAttributes } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -30,5 +31,6 @@ export async function GET(req: NextRequest) {
     maxAge: attrs.maxAge,
     secure: attrs.secure,
   });
+  appendTrefolioEcosystemUiLocaleCookieOnResponse(req, res, locale);
   return res;
 }
