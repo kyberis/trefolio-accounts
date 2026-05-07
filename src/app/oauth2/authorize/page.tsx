@@ -13,6 +13,8 @@ import {
   deleteUserBySub,
   findUserByEmail,
   findUserBySub,
+  recordIdpAuthAttemptFailure,
+  recordIdpAuthAttemptSuccess,
   saveAuthCode,
   updateUserBySub,
 } from "@/lib/db";
@@ -263,8 +265,10 @@ async function handleSubmit(formData: FormData) {
       valid = user.password_plain === password;
     }
     if (!valid) {
+      void recordIdpAuthAttemptFailure(user.sub).catch(() => {});
       redirectAuthorizeError(params, "invalid_credentials");
     }
+    void recordIdpAuthAttemptSuccess(user.sub).catch(() => {});
   }
 
   if (!skipVerify && user.email_verified !== 1) {

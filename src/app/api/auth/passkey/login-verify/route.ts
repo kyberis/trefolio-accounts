@@ -5,6 +5,8 @@ import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import {
   findPasskeyById,
   findUserBySub,
+  recordIdpAuthAttemptFailure,
+  recordIdpAuthAttemptSuccess,
   saveAuthCode,
   updatePasskeyCounter,
 } from "@/lib/db";
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
   }
   const user = await findUserBySub(passkey.sub);
   if (!user) {
+    void recordIdpAuthAttemptFailure(passkey.sub).catch(() => {});
     return NextResponse.json({ error: "unknown_user" }, { status: 401 });
   }
 
@@ -87,6 +90,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e) {
+    void recordIdpAuthAttemptFailure(passkey.sub).catch(() => {});
     return NextResponse.json(
       {
         error: "verification_failed",
@@ -96,6 +100,7 @@ export async function POST(req: NextRequest) {
     );
   }
   if (!verification.verified) {
+    void recordIdpAuthAttemptFailure(passkey.sub).catch(() => {});
     return NextResponse.json({ error: "not_verified" }, { status: 401 });
   }
 
@@ -103,6 +108,8 @@ export async function POST(req: NextRequest) {
     passkey.id,
     verification.authenticationInfo.newCounter,
   );
+
+  void recordIdpAuthAttemptSuccess(user.sub).catch(() => {});
 
   // Issue the IdP session cookie *before* minting an OIDC code so the
   // user lands on their destination already signed in.

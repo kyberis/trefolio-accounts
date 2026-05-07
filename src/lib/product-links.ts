@@ -17,6 +17,26 @@ function trim(s: string | undefined | null): string | null {
   return s.replace(/\/+$/, "") || null;
 }
 
+/**
+ * When a product is hosted on Vercel with Deployment Protection, unauthenticated
+ * server-to-server GETs return 403 before the Next app runs. Copy each project's
+ * "Protection Bypass for Automation" secret into the matching env var on the IdP.
+ * @see https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection
+ */
+function vercelProtectionBypassHeader(
+  app: ProductTarget["app"],
+): Record<string, string> {
+  const envName =
+    app === "trefolio"
+      ? "TREFOLIO_VERCEL_PROTECTION_BYPASS"
+      : app === "clara"
+        ? "CLARA_VERCEL_PROTECTION_BYPASS"
+        : "WILL_VERCEL_PROTECTION_BYPASS";
+  const secret = trim(process.env[envName] ?? null);
+  if (!secret) return {};
+  return { "x-vercel-protection-bypass": secret };
+}
+
 export interface ProductTarget {
   app: "trefolio" | "clara" | "will";
   label: string;
@@ -110,17 +130,24 @@ export async function probeProductLinks(args: {
         `${t.baseUrl}/api/v1/users/by-sub/${encodeURIComponent(args.sub)}?${params}`,
         {
           method: "GET",
-          headers: { authorization: `Bearer ${token}` },
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...vercelProtectionBypassHeader(t.app),
+          },
           cache: "no-store",
           signal: args.signal ?? ctrl.signal,
         },
       );
       if (!res.ok) {
+        const hint =
+          res.status === 403
+            ? " — if the app uses Vercel Deployment Protection, set TREFOLIO_VERCEL_PROTECTION_BYPASS / CLARA_VERCEL_PROTECTION_BYPASS / WILL_VERCEL_PROTECTION_BYPASS on the IdP"
+            : "";
         return {
           app: t.app,
           label: t.label,
           exists: false,
-          error: `HTTP ${res.status}`,
+          error: `HTTP ${res.status}${hint}`,
         };
       }
       const json = (await res.json().catch(() => ({}))) as Record<

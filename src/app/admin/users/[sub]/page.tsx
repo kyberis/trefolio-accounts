@@ -149,6 +149,22 @@ export default async function AdminUserDetailPage({
 
       <div className="admin-grid">
         <article className="card">
+          <h2 className="card-title">IdP sign-in</h2>
+          <p className="card-subtitle">
+            Password and passkey attempts vs failures on this identity service
+            (<code>user.trefolio.com</code>). Wrong password and failed passkey
+            verification increment failures; successful sign-in increments attempts
+            only.
+          </p>
+          <dl className="link-details">
+            <dt>Attempts</dt>
+            <dd>{user.idp_auth_attempts}</dd>
+            <dt>Failures</dt>
+            <dd>{user.idp_auth_failures}</dd>
+          </dl>
+        </article>
+
+        <article className="card">
           <h2 className="card-title">Linked products</h2>
           <p className="card-subtitle">
             What we found when calling each product&apos;s <code>/api/v1/users/by-sub</code>{" "}
@@ -209,6 +225,18 @@ export default async function AdminUserDetailPage({
                         <>
                           <dt>agent/day</dt>
                           <dd>{String(details.dailyAgentMessageLimit)}</dd>
+                        </>
+                      )}
+                      {t.app === "will" && typeof details.telegramDeliveryAttempts === "number" && (
+                        <>
+                          <dt>Telegram send attempts</dt>
+                          <dd>{String(details.telegramDeliveryAttempts)}</dd>
+                        </>
+                      )}
+                      {t.app === "will" && typeof details.telegramDeliveryFailures === "number" && (
+                        <>
+                          <dt>Telegram send failures</dt>
+                          <dd>{String(details.telegramDeliveryFailures)}</dd>
                         </>
                       )}
                       {typeof details.createdAt === "string" && (

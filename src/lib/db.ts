@@ -61,6 +61,10 @@ export interface AdminUserRow {
   apple_id: string | null;
   email_verified: number;
   created_at: string | null;
+  /** Password / passkey sign-in attempts (success + failure). */
+  idp_auth_attempts: number;
+  /** Subset of attempts that failed (wrong password, bad passkey, etc.). */
+  idp_auth_failures: number;
 }
 
 export interface AdminUserListResult {
@@ -168,6 +172,8 @@ async function ensurePostgresSchema(): Promise<void> {
           last_used_at TIMESTAMPTZ
         );
         CREATE INDEX IF NOT EXISTS passkeys_sub_idx ON passkeys(sub);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS idp_auth_attempts BIGINT NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS idp_auth_failures BIGINT NOT NULL DEFAULT 0;
         CREATE TABLE IF NOT EXISTS stripe_customers (
           sub TEXT PRIMARY KEY REFERENCES users(sub) ON DELETE CASCADE,
           stripe_customer_id TEXT NOT NULL UNIQUE,
@@ -264,6 +270,8 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN apple_id TEXT`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN idp_auth_attempts INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN idp_auth_failures INTEGER NOT NULL DEFAULT 0`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -286,6 +294,38 @@ function getSqliteDb(): Database.Database {
 
   sqliteDb = db;
   return sqliteDb;
+}
+
+/** Successful password check at /oauth2/authorize or successful passkey verify. */
+export async function recordIdpAuthAttemptSuccess(sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE users SET idp_auth_attempts = idp_auth_attempts + 1 WHERE sub = $1`,
+      [sub],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(`UPDATE users SET idp_auth_attempts = idp_auth_attempts + 1 WHERE sub = ?`)
+    .run(sub);
+}
+
+/** Wrong password or failed passkey verification for an existing IdP user. */
+export async function recordIdpAuthAttemptFailure(sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE users SET idp_auth_attempts = idp_auth_attempts + 1, idp_auth_failures = idp_auth_failures + 1 WHERE sub = $1`,
+      [sub],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(
+      `UPDATE users SET idp_auth_attempts = idp_auth_attempts + 1, idp_auth_failures = idp_auth_failures + 1 WHERE sub = ?`,
+    )
+    .run(sub);
 }
 
 export async function listUsersWithEntitlements(): Promise<SeedUserRow[]> {
@@ -762,6 +802,8 @@ export async function listUsersForAdmin(args: {
     const offsetIdx = params.length + 2;
     const list = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
+              COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        ${where}
@@ -785,6 +827,8 @@ export async function listUsersForAdmin(args: {
         apple_id: row.apple_id ?? null,
         email_verified: row.email_verified ? 1 : 0,
         created_at: toIsoString(row.created_at),
+        idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
+        idp_auth_failures: Number(row.idp_auth_failures ?? 0),
       })),
       total: Number(count.rows[0]?.n ?? 0),
       page,
@@ -798,6 +842,8 @@ export async function listUsersForAdmin(args: {
   const rows = db
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
+              COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        ${where}
@@ -820,6 +866,8 @@ export async function listUsersForAdmin(args: {
       apple_id: row.apple_id ?? null,
       email_verified: row.email_verified ? 1 : 0,
       created_at: toIsoString(row.created_at),
+      idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
+      idp_auth_failures: Number(row.idp_auth_failures ?? 0),
     })),
     total: Number(total),
     page,
@@ -832,6 +880,8 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
+              COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        WHERE u.sub = $1`,
@@ -850,12 +900,16 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       apple_id: row.apple_id ?? null,
       email_verified: row.email_verified ? 1 : 0,
       created_at: toIsoString(row.created_at),
+      idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
+      idp_auth_failures: Number(row.idp_auth_failures ?? 0),
     };
   }
 
   const row = getSqliteDb()
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
+              COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
        FROM users u LEFT JOIN entitlements e ON e.sub = u.sub
        WHERE u.sub = ?`,
@@ -873,6 +927,8 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     apple_id: row.apple_id ?? null,
     email_verified: row.email_verified ? 1 : 0,
     created_at: toIsoString(row.created_at),
+    idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
+    idp_auth_failures: Number(row.idp_auth_failures ?? 0),
   };
 }
 
