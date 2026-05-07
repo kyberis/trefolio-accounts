@@ -168,6 +168,14 @@ async function ensurePostgresSchema(): Promise<void> {
           last_used_at TIMESTAMPTZ
         );
         CREATE INDEX IF NOT EXISTS passkeys_sub_idx ON passkeys(sub);
+        CREATE TABLE IF NOT EXISTS stripe_customers (
+          sub TEXT PRIMARY KEY REFERENCES users(sub) ON DELETE CASCADE,
+          stripe_customer_id TEXT NOT NULL UNIQUE,
+          stripe_subscription_id TEXT,
+          current_period_end TIMESTAMPTZ,
+          cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
       `);
     } finally {
       client.release();
@@ -192,6 +200,7 @@ function getSqliteDb(): Database.Database {
   const file = path.join(process.cwd(), "idp-dev.db");
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       sub TEXT PRIMARY KEY,
@@ -241,6 +250,14 @@ function getSqliteDb(): Database.Database {
       last_used_at TEXT
     );
     CREATE INDEX IF NOT EXISTS passkeys_sub_idx ON passkeys(sub);
+    CREATE TABLE IF NOT EXISTS stripe_customers (
+      sub TEXT PRIMARY KEY,
+      stripe_customer_id TEXT NOT NULL UNIQUE,
+      stripe_subscription_id TEXT,
+      current_period_end TEXT,
+      cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
   safeAlter(db, `ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN google_id TEXT`);
@@ -400,15 +417,16 @@ export async function setPlan(
   sub: string,
   plan: "free" | "pro",
   proUntilIso: string | null,
+  source: string = "dev-toggle",
 ): Promise<void> {
   if (usePostgres) {
     await ensurePostgresSchema();
     await getPool().query(
       `INSERT INTO entitlements (sub, plan, pro_until, source, updated_at)
-       VALUES ($1, $2, $3, 'dev-toggle', NOW())
+       VALUES ($1, $2, $3, $4, NOW())
        ON CONFLICT (sub)
        DO UPDATE SET plan = EXCLUDED.plan, pro_until = EXCLUDED.pro_until, source = EXCLUDED.source, updated_at = NOW()`,
-      [sub, plan, proUntilIso],
+      [sub, plan, proUntilIso, source],
     );
     return;
   }
@@ -416,10 +434,10 @@ export async function setPlan(
   getSqliteDb()
     .prepare(
       `INSERT INTO entitlements (sub, plan, pro_until, source, updated_at)
-       VALUES (?, ?, ?, 'dev-toggle', datetime('now'))
+       VALUES (?, ?, ?, ?, datetime('now'))
        ON CONFLICT(sub) DO UPDATE SET plan = excluded.plan, pro_until = excluded.pro_until, source = excluded.source, updated_at = datetime('now')`,
     )
-    .run(sub, plan, proUntilIso);
+    .run(sub, plan, proUntilIso, source);
 }
 
 export async function createUser(args: {
@@ -1043,4 +1061,118 @@ export async function findSubByTelegramId(tgUserId: string): Promise<string | nu
     .prepare(`SELECT sub FROM telegram_links WHERE tg_user_id = ?`)
     .get(tgUserId) as any;
   return row?.sub ?? null;
+}
+
+export interface DbStripeCustomer {
+  sub: string;
+  stripe_customer_id: string;
+  stripe_subscription_id: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
+export async function getStripeCustomerBySub(sub: string): Promise<DbStripeCustomer | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT sub, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end
+       FROM stripe_customers WHERE sub = $1`,
+      [sub],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      sub: String(row.sub),
+      stripe_customer_id: String(row.stripe_customer_id),
+      stripe_subscription_id: row.stripe_subscription_id ?? null,
+      current_period_end: toIsoString(row.current_period_end),
+      cancel_at_period_end: Boolean(row.cancel_at_period_end),
+    };
+  }
+
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT sub, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end
+       FROM stripe_customers WHERE sub = ?`,
+    )
+    .get(sub) as any;
+  if (!row) return null;
+  return {
+    sub: String(row.sub),
+    stripe_customer_id: String(row.stripe_customer_id),
+    stripe_subscription_id: row.stripe_subscription_id ?? null,
+    current_period_end: toIsoString(row.current_period_end),
+    cancel_at_period_end: Boolean(row.cancel_at_period_end),
+  };
+}
+
+export async function findSubByStripeCustomerId(stripeCustomerId: string): Promise<string | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT sub FROM stripe_customers WHERE stripe_customer_id = $1`,
+      [stripeCustomerId],
+    );
+    return rows[0]?.sub ? String(rows[0].sub) : null;
+  }
+
+  const row = getSqliteDb()
+    .prepare(`SELECT sub FROM stripe_customers WHERE stripe_customer_id = ?`)
+    .get(stripeCustomerId) as any;
+  return row?.sub ?? null;
+}
+
+export async function upsertStripeCustomerRow(args: {
+  sub: string;
+  stripeCustomerId: string;
+  stripeSubscriptionId?: string | null;
+  currentPeriodEnd?: Date | string | null;
+  cancelAtPeriodEnd?: boolean;
+}): Promise<void> {
+  const cpe =
+    args.currentPeriodEnd instanceof Date
+      ? args.currentPeriodEnd.toISOString()
+      : args.currentPeriodEnd ?? null;
+  const cancel = Boolean(args.cancelAtPeriodEnd);
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `INSERT INTO stripe_customers (sub, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (sub) DO UPDATE SET
+         stripe_customer_id = EXCLUDED.stripe_customer_id,
+         stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, stripe_customers.stripe_subscription_id),
+         current_period_end = COALESCE(EXCLUDED.current_period_end, stripe_customers.current_period_end),
+         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+         updated_at = NOW()`,
+      [
+        args.sub,
+        args.stripeCustomerId,
+        args.stripeSubscriptionId ?? null,
+        cpe,
+        cancel,
+      ],
+    );
+    return;
+  }
+
+  getSqliteDb()
+    .prepare(
+      `INSERT INTO stripe_customers (sub, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end, updated_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(sub) DO UPDATE SET
+         stripe_customer_id = excluded.stripe_customer_id,
+         stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, stripe_subscription_id),
+         current_period_end = COALESCE(excluded.current_period_end, current_period_end),
+         cancel_at_period_end = excluded.cancel_at_period_end,
+         updated_at = datetime('now')`,
+    )
+    .run(
+      args.sub,
+      args.stripeCustomerId,
+      args.stripeSubscriptionId ?? null,
+      cpe,
+      cancel ? 1 : 0,
+    );
 }

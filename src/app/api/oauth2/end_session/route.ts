@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { STATIC_CLIENTS } from "@/lib/oidc";
+import { STATIC_CLIENTS, findClient } from "@/lib/oidc";
 import {
   IDP_IMPERSONATOR_COOKIE,
   IDP_SESSION_COOKIE,
@@ -37,20 +37,53 @@ function escapeHtml(s: string): string {
 }
 
 /**
+ * When `post_logout_redirect_uri` is missing or rejected, send the user to an
+ * **absolute** product origin — never "/" alone, which browsers resolve against
+ * the IdP host (user.trefolio.com) and feels like "stuck on accounts".
+ */
+function defaultPostLogoutAbsolute(clientId: string | null): string {
+  const client = findClient(clientId || "") || findClient("trefolio");
+  if (!client?.redirectUris?.length) return "https://trefolio.com/";
+  const preferred = client.redirectUris.find((u) => {
+    try {
+      const p = new URL(u);
+      return (
+        p.protocol === "https:" &&
+        p.hostname !== "localhost" &&
+        p.hostname !== "127.0.0.1"
+      );
+    } catch {
+      return false;
+    }
+  });
+  const pick = preferred || client.redirectUris[0];
+  try {
+    return new URL(pick).origin + "/";
+  } catch {
+    return "https://trefolio.com/";
+  }
+}
+
+/**
  * Validate `post_logout_redirect_uri` against the registered clients'
  * URIs (origin must match either a redirect URI or another front-channel
  * URI). This blocks open-redirect abuse without forcing every product to
  * register dedicated post-logout URIs.
  */
-function safePostLogoutRedirect(raw: string | null, state: string | null): string {
-  if (!raw) return "/";
+function safePostLogoutRedirect(
+  raw: string | null,
+  state: string | null,
+  clientId: string | null,
+): string {
+  const fallback = defaultPostLogoutAbsolute(clientId);
+  if (!raw) return fallback;
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    return "/";
+    return fallback;
   }
-  if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) return "/";
+  if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) return fallback;
 
   const okOrigin = STATIC_CLIENTS.some((c) => {
     const all = [...c.redirectUris, ...c.frontchannelLogoutUris];
@@ -62,7 +95,7 @@ function safePostLogoutRedirect(raw: string | null, state: string | null): strin
       }
     });
   });
-  if (!okOrigin) return "/";
+  if (!okOrigin) return fallback;
 
   if (state) parsed.searchParams.set("state", state);
   return parsed.toString();
@@ -73,6 +106,7 @@ async function handle(req: NextRequest) {
   const postLogoutRedirect = safePostLogoutRedirect(
     url.searchParams.get("post_logout_redirect_uri"),
     url.searchParams.get("state"),
+    url.searchParams.get("client_id"),
   );
 
   // Include every front-channel URL whose locality (dev/local vs prod)

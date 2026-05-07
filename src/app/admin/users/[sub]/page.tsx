@@ -7,6 +7,8 @@ import { getIdpAdmin } from "@/lib/admin";
 import {
   deleteUserBySub,
   getAdminUserDetail,
+  getEntitlement,
+  getStripeCustomerBySub,
   setPlan,
   updateUserBySub,
 } from "@/lib/db";
@@ -30,14 +32,26 @@ async function setPlanAction(formData: FormData) {
   const plan = String(formData.get("plan") || "");
   const proUntil = String(formData.get("proUntil") || "").trim();
   if (!sub) return;
-  if (plan === "pro") {
+
+  const current = await getEntitlement(sub);
+  const stripeManagedPro =
+    current.plan === "pro" && current.source === "stripe";
+
+  if (plan === "free") {
+    if (stripeManagedPro) {
+      redirect(
+        `/admin/users/${encodeURIComponent(sub)}?planError=stripe_downgrade`,
+      );
+    }
+    await setPlan(sub, "free", null);
+  } else if (plan === "pro") {
     const iso = proUntil
       ? new Date(proUntil).toISOString()
       : new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
-    await setPlan(sub, "pro", iso);
-  } else {
-    await setPlan(sub, "free", null);
+    const sourceTag = stripeManagedPro ? "stripe" : "dev-toggle";
+    await setPlan(sub, "pro", iso, sourceTag);
   }
+
   revalidatePath(`/admin/users/${sub}`);
   revalidatePath("/admin/users");
 }
@@ -79,12 +93,20 @@ async function deleteUserAction(formData: FormData) {
 
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sub: string }>;
+  searchParams: Promise<{ planError?: string }>;
 }) {
   const { sub } = await params;
+  const { planError } = await searchParams;
   const user = await getAdminUserDetail(sub);
   if (!user) notFound();
+
+  const stripeManagedPro = user.plan === "pro" && user.source === "stripe";
+  const stripeCustomer = stripeManagedPro
+    ? await getStripeCustomerBySub(user.sub)
+    : null;
 
   const [linksRaw, targets] = [
     await probeProductLinks({ sub: user.sub, email: user.email, timeoutMs: 2500 }),
@@ -218,12 +240,38 @@ export default async function AdminUserDetailPage({
           <p className="card-subtitle">
             Source: {user.source ? <code>{user.source}</code> : <em>auto</em>}
           </p>
+          {planError === "stripe_downgrade" && (
+            <p className="card-subtitle" role="alert" style={{ color: "var(--warn, #c2410c)" }}>
+              Cannot set this account to Free while Pro is managed by Stripe. Cancel or change
+              the subscription in Stripe (or wait until the webhook reflects cancellation).
+            </p>
+          )}
+          {stripeManagedPro && (
+            <p className="card-subtitle">
+              Pro is billed via Stripe — use the Stripe Dashboard to cancel or refund; this form
+              cannot downgrade to Free until Stripe no longer reports paid access.
+              {stripeCustomer?.stripe_customer_id && (
+                <>
+                  {" "}
+                  <a
+                    href={`https://dashboard.stripe.com/customers/${stripeCustomer.stripe_customer_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open Stripe customer →
+                  </a>
+                </>
+              )}
+            </p>
+          )}
           <form action={setPlanAction} className="form-stack">
             <input type="hidden" name="sub" value={user.sub} />
             <label className="field">
               <span>Plan</span>
               <select name="plan" defaultValue={user.plan} className="input">
-                <option value="free">free</option>
+                <option value="free" disabled={stripeManagedPro}>
+                  free
+                </option>
                 <option value="pro">pro</option>
               </select>
             </label>

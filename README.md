@@ -94,6 +94,19 @@ Open `http://localhost:3300`.
 
 You can switch plan per user from the homepage.
 
+## Stripe billing (`/upgrade`)
+
+Uses the **same Stripe account and Price IDs as Warren (trefolio.com)**. Configure on Vercel:
+
+| Variable | Purpose |
+|----------|---------|
+| `STRIPE_SECRET_KEY` | Server-side API |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for **`POST /api/billing/webhook`** on this deployment |
+| `STRIPE_PRICE_PRO_MONTHLY` | Same `price_…` as Warren (`STRIPE_PRICE_PRO_MONTHLY`) |
+| `STRIPE_PRICE_PRO_ANNUAL` | Same `price_…` as Warren (`STRIPE_PRICE_PRO_ANNUAL`) |
+
+Billing UI: **`/upgrade`** (requires IdP session cookie). Checkout API: **`POST /api/billing/checkout`** (JSON body `{ "interval": "monthly" \| "annual", "from": "clara" \| "will" \| "trefolio" }`).
+
 ## Notes
 
 - This repo is **dev-only**. Do not use these secrets in production.

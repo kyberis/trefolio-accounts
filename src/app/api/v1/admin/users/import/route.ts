@@ -68,6 +68,21 @@ export async function POST(req: NextRequest) {
 
   const current = await getEntitlement(user.sub);
   const incomingPlan = body.plan === "pro" ? "pro" : "free";
+
+  if (
+    body.plan === "free" &&
+    current.plan === "pro" &&
+    current.source === "stripe"
+  ) {
+    return NextResponse.json(
+      {
+        error: "stripe_managed_pro",
+        message: "Cannot downgrade Stripe-managed Pro via this import.",
+      },
+      { status: 409 },
+    );
+  }
+
   const resolvedPlan =
     current.plan === "pro" || incomingPlan === "pro" ? "pro" : "free";
   const incomingUntil =
