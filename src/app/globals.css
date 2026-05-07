@@ -461,6 +461,31 @@ a:hover {
   margin-top: 8px;
 }
 
+/* Per-app accent on /upgrade?from=… (subtle border; works light + dark) */
+.upgrade-from-trefolio .upgrade-landing-accent {
+  border-left: 4px solid var(--emerald-strong);
+  padding-left: 16px;
+  margin-left: 0;
+  align-self: stretch;
+  max-width: 520px;
+}
+
+.upgrade-from-clara .upgrade-landing-accent {
+  border-left: 4px solid var(--cyan);
+  padding-left: 16px;
+  margin-left: 0;
+  align-self: stretch;
+  max-width: 520px;
+}
+
+.upgrade-from-will .upgrade-landing-accent {
+  border-left: 4px solid var(--violet);
+  padding-left: 16px;
+  margin-left: 0;
+  align-self: stretch;
+  max-width: 520px;
+}
+
 .plan-picker {
   display: flex;
   gap: 10px;

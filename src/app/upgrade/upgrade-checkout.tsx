@@ -4,6 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProductTarget } from "@/lib/product-links";
+import {
+  type FromApp,
+  getCheckoutFootnote,
+  getLandingBenefitsHeading,
+  getLandingBenefitsSub,
+  getSuccessStepOrder,
+  getUpgradeBullets,
+  parseFromApp,
+  upgradeFromCssClass,
+} from "@/lib/upgrade-from-copy";
 
 type Interval = "monthly" | "annual";
 
@@ -40,6 +50,13 @@ export default function UpgradeCheckout(props: {
   const trefolio = productTargets.find((t) => t.app === "trefolio");
   const clara = productTargets.find((t) => t.app === "clara");
   const will = productTargets.find((t) => t.app === "will");
+  const fromApp = parseFromApp(from);
+  const fromCss = upgradeFromCssClass(fromApp);
+  const originProduct = productTargets.find((t) => t.app === from) ?? trefolio;
+
+  const landingBullets = useMemo(() => getUpgradeBullets(fromApp), [fromApp]);
+  const successOrder = useMemo(() => getSuccessStepOrder(fromApp), [fromApp]);
+  const checkoutFootnote = useMemo(() => getCheckoutFootnote(fromApp), [fromApp]);
 
   const logIntent = useCallback(async () => {
     if (intentLogged.current) return;
@@ -147,13 +164,13 @@ export default function UpgradeCheckout(props: {
 
   if (billingFlash === "portal_return") {
     return (
-      <div className="upgrade-stack">
+      <div className={`upgrade-stack ${fromCss}`}>
         <div className="flash flash-success" role="status">
           You returned from the billing portal. Changes may take a few seconds to sync across apps.
         </div>
         <p className="fine-print">
-          <Link href={trefolio?.baseUrl ?? "/"} className="link-muted">
-            Back to trefolio
+          <Link href={originProduct?.baseUrl ?? "/"} className="link-muted">
+            Back to {originProduct?.label ?? "app"}
           </Link>
         </p>
       </div>
@@ -161,8 +178,31 @@ export default function UpgradeCheckout(props: {
   }
 
   if (billingFlash === "success") {
+    const successLine = (app: FromApp) => {
+      switch (app) {
+        case "trefolio":
+          return (
+            <>
+              Open <strong>trefolio</strong> and sign in with this account — your portfolio limits upgrade immediately.
+            </>
+          );
+        case "clara":
+          return (
+            <>
+              <strong>Clara</strong> — higher AI agent limits for financial workflows; sign in with the same trefolio
+              identity.
+            </>
+          );
+        case "will":
+          return (
+            <>
+              <strong>Will</strong> — notes and AI quota scale with Pro; use the same login.
+            </>
+          );
+      }
+    };
     return (
-      <div className="upgrade-stack" style={{ textAlign: "left" }}>
+      <div className={`upgrade-stack ${fromCss}`} style={{ textAlign: "left" }}>
         <div className="flash flash-success" role="status">
           <strong>Welcome to Pro.</strong> Your subscription is active. Entitlements sync automatically when you open
           each app.
@@ -170,16 +210,9 @@ export default function UpgradeCheckout(props: {
         <section style={{ marginTop: 20 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 12 }}>Where to go next</h2>
           <ol style={{ paddingLeft: 20, lineHeight: 1.7, color: "var(--muted, #64748b)" }}>
-            <li>
-              Open <strong>trefolio</strong> and sign in with this account — your portfolio limits upgrade immediately.
-            </li>
-            <li>
-              <strong>Clara</strong> — higher AI agent limits for financial workflows; sign in with the same trefolio
-              identity.
-            </li>
-            <li>
-              <strong>Will</strong> — notes and AI quota scale with Pro; use the same login.
-            </li>
+            {successOrder.map((app) => (
+              <li key={app}>{successLine(app)}</li>
+            ))}
           </ol>
         </section>
         <div className="upgrade-product-links" style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 16 }}>
@@ -205,7 +238,7 @@ export default function UpgradeCheckout(props: {
 
   if (billingFlash === "cancelled") {
     return (
-      <div className="upgrade-stack">
+      <div className={`upgrade-stack ${fromCss}`}>
         <div className="flash flash-muted" role="status">
           Checkout cancelled. You can subscribe anytime from this page.
         </div>
@@ -218,7 +251,7 @@ export default function UpgradeCheckout(props: {
 
   if (initialIsPro) {
     return (
-      <div className="upgrade-stack">
+      <div className={`upgrade-stack ${fromCss}`}>
         <div className="flash flash-success" role="status">
           Your account already has Pro. Enjoy Warren, Clara, and Will with higher limits.
         </div>
@@ -232,20 +265,18 @@ export default function UpgradeCheckout(props: {
 
   if (landingPhase) {
     return (
-      <div className="upgrade-stack">
-        <section style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: "1.15rem", marginBottom: 12 }}>What you get with Pro</h2>
-          <ul style={{ paddingLeft: 20, lineHeight: 1.65, color: "var(--muted, #475569)" }}>
-            <li>
-              <strong>trefolio</strong> — full portfolio tracking, imports, AI insights, and Pro limits on the web and
-              mobile apps.
-            </li>
-            <li>
-              <strong>Clara</strong> — financial agents with higher daily message limits for research and automation.
-            </li>
-            <li>
-              <strong>Will</strong> — notes and AI assistance with Pro-grade quotas.
-            </li>
+      <div className={`upgrade-stack ${fromCss}`}>
+        <section className="upgrade-landing-accent" style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.15rem", marginBottom: 8 }}>{getLandingBenefitsHeading(fromApp)}</h2>
+          <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "var(--text-muted, #475569)" }}>
+            {getLandingBenefitsSub(fromApp)}
+          </p>
+          <ul style={{ paddingLeft: 20, lineHeight: 1.65, color: "var(--muted, #475569)", margin: 0 }}>
+            {landingBullets.map((b) => (
+              <li key={b.id}>
+                <strong>{b.title}</strong> — {b.body}
+              </li>
+            ))}
           </ul>
         </section>
 
@@ -298,7 +329,7 @@ export default function UpgradeCheckout(props: {
   }
 
   return (
-    <div className="upgrade-stack">
+    <div className={`upgrade-stack ${fromCss}`}>
       <div className="plan-picker">
         <button
           type="button"
@@ -333,10 +364,7 @@ export default function UpgradeCheckout(props: {
         </p>
       ) : null}
 
-      <p className="fine-print">
-        Same subscription benefits across the trefolio ecosystem. Billing is processed by Stripe; you will receive a
-        receipt by email.
-      </p>
+      <p className="fine-print">{checkoutFootnote}</p>
     </div>
   );
 }

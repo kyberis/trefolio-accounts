@@ -4,6 +4,11 @@ import { cookies } from "next/headers";
 import { Brand } from "@/components/Brand";
 import { findUserBySub, getEntitlement } from "@/lib/db";
 import { getProductTargets } from "@/lib/product-links";
+import {
+  getUpgradePageLeadBody,
+  getUpgradePageTitle,
+  parseFromApp,
+} from "@/lib/upgrade-from-copy";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 import UpgradeCheckout from "./upgrade-checkout";
 
@@ -90,6 +95,7 @@ export default async function UpgradePage({
   const ent = await getEntitlement(sub);
   const isPro =
     ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
+  const fromApp = parseFromApp(from);
 
   const productTargets = getProductTargets().map((t) => ({
     app: t.app,
@@ -108,10 +114,9 @@ export default async function UpgradePage({
             <Brand href="https://trefolio.com" />
           </div>
           <div className="heading-stack">
-            <h1>Trefolio Pro</h1>
+            <h1>{getUpgradePageTitle()}</h1>
             <p>
-              Signed in as <strong>{user?.email ?? sub}</strong>. One subscription unlocks higher limits for portfolio
-              tracking, Clara, and Will.
+              Signed in as <strong>{user?.email ?? sub}</strong>. {getUpgradePageLeadBody(fromApp)}
             </p>
           </div>
           <UpgradeCheckout
