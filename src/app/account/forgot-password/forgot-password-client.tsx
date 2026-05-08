@@ -14,11 +14,13 @@ import { getIdpUiCopy } from "@/lib/i18n/idp-messages";
 
 const FORGOT_PATH = "/account/forgot-password";
 
+type Outcome = "idle" | "sent_inbox" | "sent_suppressed";
+
 export function ForgotPasswordClient({ locale }: { locale: IdpLocale }) {
   const t = getIdpUiCopy(locale);
   const appKey = appKeyFromHint(undefined);
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome>("idle");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,24 +34,50 @@ export function ForgotPasswordClient({ locale }: { locale: IdpLocale }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        mail_suppressed?: boolean;
+      };
       if (res.status === 400 && data.error === "invalid_email") {
         setError(t.forgotPasswordInvalidEmail);
         setLoading(false);
         return;
       }
       if (!res.ok) {
-        setError(t.forgotPasswordNetworkError);
+        if (data.error === "email_send_failed") {
+          setError(`${t.forgotPasswordSendFailed}${data.message ? `\n\n(${data.message})` : ""}`);
+        } else {
+          setError(t.forgotPasswordNetworkError);
+        }
         setLoading(false);
         return;
       }
-      setSent(true);
+      if (data.mail_suppressed) {
+        setOutcome("sent_suppressed");
+      } else {
+        setOutcome("sent_inbox");
+      }
     } catch {
       setError(t.forgotPasswordNetworkError);
     } finally {
       setLoading(false);
     }
   }
+
+  const heading =
+    outcome === "sent_suppressed"
+      ? t.forgotPasswordMailSuppressedTitle
+      : outcome === "sent_inbox"
+        ? t.forgotPasswordSentTitle
+        : t.forgotPasswordTitle;
+
+  const subtext =
+    outcome === "sent_suppressed"
+      ? t.forgotPasswordMailSuppressedBody
+      : outcome === "sent_inbox"
+        ? t.forgotPasswordSentBody
+        : t.forgotPasswordSubtitle;
 
   return (
     <div className="page-shell" data-authorize-app={appKey}>
@@ -60,10 +88,10 @@ export function ForgotPasswordClient({ locale }: { locale: IdpLocale }) {
             <AuthorizeBrandHeader app={appKey} />
           </div>
           <div className="heading-stack">
-            <h1>{sent ? t.forgotPasswordSentTitle : t.forgotPasswordTitle}</h1>
-            <p>{sent ? t.forgotPasswordSentBody : t.forgotPasswordSubtitle}</p>
+            <h1>{heading}</h1>
+            <p style={outcome !== "idle" ? { whiteSpace: "pre-wrap" } : undefined}>{subtext}</p>
           </div>
-          {sent ? (
+          {outcome !== "idle" ? (
             <div className="form-stack">
               <Link href="/oauth2/authorize" className="btn btn-primary btn-block">
                 {t.forgotPasswordBackToSignIn}
@@ -85,7 +113,7 @@ export function ForgotPasswordClient({ locale }: { locale: IdpLocale }) {
                 />
               </label>
               {error ? (
-                <div className="alert alert-error" role="alert">
+                <div className="alert alert-error" role="alert" style={{ whiteSpace: "pre-wrap" }}>
                   {error}
                 </div>
               ) : null}

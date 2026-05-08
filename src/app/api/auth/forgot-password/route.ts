@@ -40,11 +40,19 @@ export async function POST(req: NextRequest) {
 
     if (idpSkipsPasswordResetEmail()) {
       console.info(`[idp-password-reset] email skipped (non-production); reset URL:\n${resetUrl}`);
-    } else {
-      const sent = await sendIdpPasswordResetEmail(user.email, token, user.locale);
-      if (!sent.success) {
-        console.warn("[idp-password-reset] send failed:", sent.error);
-      }
+      return NextResponse.json({ ok: true, mail_suppressed: true });
+    }
+
+    const sent = await sendIdpPasswordResetEmail(user.email, token, user.locale);
+    if (!sent.success) {
+      console.warn("[idp-password-reset] send failed:", sent.error);
+      return NextResponse.json(
+        {
+          error: "email_send_failed",
+          message: sent.error || "send_failed",
+        },
+        { status: 500 },
+      );
     }
   }
 

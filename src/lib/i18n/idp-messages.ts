@@ -93,6 +93,9 @@ export type IdpUiCopy = {
   forgotPasswordBackToSignIn: string;
   forgotPasswordNetworkError: string;
   forgotPasswordInvalidEmail: string;
+  forgotPasswordSendFailed: string;
+  forgotPasswordMailSuppressedTitle: string;
+  forgotPasswordMailSuppressedBody: string;
   resetPasswordTitle: string;
   resetPasswordSubtitle: string;
   resetPasswordSubmit: string;
@@ -155,6 +158,11 @@ const en: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordBackToSignIn: "Back to sign in",
   forgotPasswordNetworkError: "Something went wrong. Please try again.",
   forgotPasswordInvalidEmail: "Please enter a valid email address.",
+  forgotPasswordSendFailed:
+    "We couldn’t send the reset email. On the live IdP (Vercel project trefolio-accounts), set RESEND_API_KEY and usually RESEND_FROM_ADDRESS — the same values you use for sign-up verification emails.",
+  forgotPasswordMailSuppressedTitle: "Email not sent from this server",
+  forgotPasswordMailSuppressedBody:
+    "Outbound mail is turned off outside production. If an account with a password exists for that address, a one-time reset link was printed in the IdP server logs instead.",
   resetPasswordTitle: "Choose a new password",
   resetPasswordSubtitle: "Enter a new password for your trefolio account.",
   resetPasswordSubmit: "Update password",
@@ -277,6 +285,11 @@ const de: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordBackToSignIn: "Zurück zur Anmeldung",
   forgotPasswordNetworkError: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
   forgotPasswordInvalidEmail: "Bitte gib eine gültige E-Mail-Adresse ein.",
+  forgotPasswordSendFailed:
+    "Die E-Mail zum Zurücksetzen konnte nicht gesendet werden. Auf dem produktiven IdP (Vercel-Projekt trefolio-accounts) RESEND_API_KEY und üblicherweise RESEND_FROM_ADDRESS setzen — dieselben Werte wie für Bestätigungs-E-Mails bei der Registrierung.",
+  forgotPasswordMailSuppressedTitle: "Keine E-Mail von diesem Server",
+  forgotPasswordMailSuppressedBody:
+    "Ausgehende E-Mails sind außerhalb der Produktion deaktiviert. Wenn ein Konto mit Passwort existiert, wurde der Einmal-Link zum Zurücksetzen in den IdP-Server-Logs ausgegeben.",
   resetPasswordTitle: "Neues Passwort wählen",
   resetPasswordSubtitle: "Lege ein neues Passwort für dein trefolio-Konto fest.",
   resetPasswordSubmit: "Passwort aktualisieren",
@@ -400,6 +413,11 @@ const es: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordBackToSignIn: "Volver al inicio de sesión",
   forgotPasswordNetworkError: "Algo salió mal. Inténtalo de nuevo.",
   forgotPasswordInvalidEmail: "Introduce una dirección de correo válida.",
+  forgotPasswordSendFailed:
+    "No pudimos enviar el correo de restablecimiento. En el IdP en producción (proyecto Vercel trefolio-accounts), configura RESEND_API_KEY y, por lo general, RESEND_FROM_ADDRESS — los mismos valores que para los correos de verificación al registrarse.",
+  forgotPasswordMailSuppressedTitle: "Este entorno no envía correo",
+  forgotPasswordMailSuppressedBody:
+    "El envío de correo está desactivado fuera de producción. Si existe una cuenta con contraseña para esa dirección, el enlace de un solo uso se ha escrito en los logs del servidor del IdP.",
   resetPasswordTitle: "Elige una contraseña nueva",
   resetPasswordSubtitle: "Introduce una contraseña nueva para tu cuenta de trefolio.",
   resetPasswordSubmit: "Actualizar contraseña",
@@ -523,6 +541,11 @@ const fr: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordBackToSignIn: "Retour à la connexion",
   forgotPasswordNetworkError: "Une erreur s’est produite. Réessayez.",
   forgotPasswordInvalidEmail: "Veuillez saisir une adresse e-mail valide.",
+  forgotPasswordSendFailed:
+    "Impossible d’envoyer l’e-mail de réinitialisation. Sur l’IdP en production (projet Vercel trefolio-accounts), définissez RESEND_API_KEY et en général RESEND_FROM_ADDRESS — les mêmes valeurs que pour les e-mails de vérification d’inscription.",
+  forgotPasswordMailSuppressedTitle: "Aucun e-mail envoyé depuis ce serveur",
+  forgotPasswordMailSuppressedBody:
+    "L’envoi d’e-mails est désactivé hors production. Si un compte avec mot de passe existe pour cette adresse, un lien de réinitialisation à usage unique a été écrit dans les journaux du serveur IdP.",
   resetPasswordTitle: "Choisir un nouveau mot de passe",
   resetPasswordSubtitle: "Saisissez un nouveau mot de passe pour votre compte trefolio.",
   resetPasswordSubmit: "Mettre à jour le mot de passe",
@@ -646,6 +669,11 @@ const it: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordBackToSignIn: "Torna all’accesso",
   forgotPasswordNetworkError: "Qualcosa è andato storto. Riprova.",
   forgotPasswordInvalidEmail: "Inserisci un indirizzo email valido.",
+  forgotPasswordSendFailed:
+    "Non è stato possibile inviare l’email di reimpostazione. Sull’IdP in produzione (progetto Vercel trefolio-accounts) imposta RESEND_API_KEY e di solito RESEND_FROM_ADDRESS — gli stessi valori usati per le email di verifica in fase di registrazione.",
+  forgotPasswordMailSuppressedTitle: "Nessuna email da questo server",
+  forgotPasswordMailSuppressedBody:
+    "L’invio delle email è disattivato fuori produzione. Se esiste un account con password per quell’indirizzo, il link monouso di reimpostazione è stato scritto nei log del server IdP.",
   resetPasswordTitle: "Scegli una nuova password",
   resetPasswordSubtitle: "Inserisci una nuova password per il tuo account trefolio.",
   resetPasswordSubmit: "Aggiorna password",
