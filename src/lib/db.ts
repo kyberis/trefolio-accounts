@@ -14,6 +14,32 @@ let sqliteDb: Database.Database | null = null;
 let pgPool: Pool | null = null;
 let pgSchemaReady: Promise<void> | null = null;
 
+/**
+ * Hosted Postgres URLs often include `?sslmode=require` (Turso, Vercel, etc.).
+ * `pg` v8+ emits a startup warning because `require`/`prefer`/`verify-ca` are
+ * temporary aliases for `verify-full` until pg v9. We strip `sslmode` (and
+ * redundant client-cert query params) because TLS is already set on the Pool
+ * via `ssl: { rejectUnauthorized: false }` — same behavior, no warning.
+ */
+function postgresConnectionStringForPool(): string {
+  const raw = postgresUrl.trim();
+  if (!raw.startsWith("postgres://") && !raw.startsWith("postgresql://")) {
+    return raw;
+  }
+  try {
+    const u = new URL(raw);
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("sslcert");
+    u.searchParams.delete("sslkey");
+    u.searchParams.delete("sslrootcert");
+    let out = u.toString();
+    if (out.endsWith("?")) out = out.slice(0, -1);
+    return out;
+  } catch {
+    return raw;
+  }
+}
+
 function newSub(): string {
   return "u_" + randomBytes(9).toString("base64url");
 }
@@ -112,7 +138,7 @@ function getPool(): Pool {
   }
   if (!pgPool) {
     pgPool = new Pool({
-      connectionString: postgresUrl,
+      connectionString: postgresConnectionStringForPool(),
       max: 10,
       ssl: { rejectUnauthorized: false },
     });
