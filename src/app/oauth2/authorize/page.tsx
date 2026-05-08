@@ -43,10 +43,22 @@ import {
   verifySession,
 } from "@/lib/session";
 import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
+import {
+  accountsAuthProbeLog,
+  accountsAuthProbeWarn,
+  emailDomainHint,
+  subTail,
+} from "@/lib/auth-probe-log";
 
 export const dynamic = "force-dynamic";
 
 const isProd = process.env.NODE_ENV === "production";
+
+function clientIdTail(id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  if (id.length <= 12) return "***";
+  return `…${id.slice(-10)}`;
+}
 
 /**
  * Build the URL the "Continue with Google" link points at. We forward
@@ -159,7 +171,14 @@ function readOidcParamsFromForm(formData: FormData): SP {
   };
 }
 
-function redirectAuthorizeError(sp: SP, error: string) {
+function redirectAuthorizeError(sp: SP, error: string, probeExtras?: Record<string, unknown>) {
+  accountsAuthProbeWarn("authorize.flow_error", {
+    code: error,
+    clientIdTail: clientIdTail(sp.client_id),
+    appHint: sp.app_hint,
+    screenHint: sp.screen_hint,
+    ...(probeExtras ?? {}),
+  });
   const usp = new URLSearchParams();
   if (sp.client_id) usp.set("client_id", sp.client_id);
   if (sp.redirect_uri) usp.set("redirect_uri", sp.redirect_uri);
@@ -203,15 +222,36 @@ async function handleSubmit(formData: FormData) {
 
   const client = findClient(params.client_id || "");
   if (!client || !params.redirect_uri || !client.redirectUris.includes(params.redirect_uri)) {
+    accountsAuthProbeWarn("authorize.submit_invalid_client", {
+      hasClientRow: Boolean(client),
+      hasRedirectUri: Boolean(params.redirect_uri),
+      redirectAllowed: Boolean(
+        client && params.redirect_uri && client.redirectUris.includes(params.redirect_uri),
+      ),
+      clientIdTail: clientIdTail(params.client_id),
+    });
     redirect(`/oauth2/authorize?error=invalid_client`);
   }
 
+  accountsAuthProbeLog("authorize.submit_begin", {
+    intent,
+    emailDomainHint: emailDomainHint(email),
+    clientIdTail: clientIdTail(params.client_id),
+    appHint: params.app_hint,
+    screenHint: params.screen_hint,
+    uiLocales: params.ui_locales,
+  });
+
   if (intent === "signup") {
     if (password.length < 8) {
-      redirectAuthorizeError(params, "password_too_short");
+      redirectAuthorizeError(params, "password_too_short", {
+        emailDomainHint: emailDomainHint(email),
+      });
     }
     if (password !== passwordConfirm) {
-      redirectAuthorizeError(params, "password_mismatch");
+      redirectAuthorizeError(params, "password_mismatch", {
+        emailDomainHint: emailDomainHint(email),
+      });
     }
   }
 
@@ -219,10 +259,15 @@ async function handleSubmit(formData: FormData) {
 
   if (!user) {
     if (intent !== "signup") {
-      redirectAuthorizeError(params, "invalid_credentials");
+      redirectAuthorizeError(params, "invalid_credentials", {
+        reason: "user_not_found",
+        emailDomainHint: emailDomainHint(email),
+      });
     }
     if (isBlockedEmailDomain(email)) {
-      redirectAuthorizeError(params, "blocked_email_domain");
+      redirectAuthorizeError(params, "blocked_email_domain", {
+        emailDomainHint: emailDomainHint(email),
+      });
     }
     if (!skipVerify) {
       const created = await createUser({
@@ -240,7 +285,10 @@ async function handleSubmit(formData: FormData) {
       const sent = await sendIdpVerificationEmail(created.email, token, formLocale);
       if (!sent.success) {
         await deleteUserBySub(created.sub);
-        redirectAuthorizeError(params, "verification_email_failed");
+        redirectAuthorizeError(params, "verification_email_failed", {
+          emailDomainHint: emailDomainHint(email),
+          stage: "post_signup",
+        });
       }
       const jar = await cookies();
       const pr = pendingResumeCookieAttributes();
@@ -269,7 +317,11 @@ async function handleSubmit(formData: FormData) {
     }
     if (!valid) {
       void recordIdpAuthAttemptFailure(user.sub).catch(() => {});
-      redirectAuthorizeError(params, "invalid_credentials");
+      redirectAuthorizeError(params, "invalid_credentials", {
+        reason: "bad_password",
+        emailDomainHint: emailDomainHint(email),
+        subTail: subTail(user.sub),
+      });
     }
     void recordIdpAuthAttemptSuccess(user.sub).catch(() => {});
   }
@@ -283,7 +335,10 @@ async function handleSubmit(formData: FormData) {
     });
     const sent = await sendIdpVerificationEmail(user.email, token, formLocale);
     if (!sent.success) {
-      redirectAuthorizeError(params, "verification_email_failed");
+      redirectAuthorizeError(params, "verification_email_failed", {
+        emailDomainHint: emailDomainHint(email),
+        stage: "unverified_login",
+      });
     }
     const jar = await cookies();
     const pr = pendingResumeCookieAttributes();
@@ -321,6 +376,13 @@ async function handleSubmit(formData: FormData) {
   const cb = new URL(params.redirect_uri!);
   cb.searchParams.set("code", code);
   if (params.state) cb.searchParams.set("state", params.state);
+  accountsAuthProbeLog("authorize.redirect_with_code", {
+    subTail: subTail(user.sub),
+    intent,
+    clientIdTail: clientIdTail(params.client_id),
+    appHint: params.app_hint,
+    callbackOrigin: cb.origin,
+  });
   redirect(cb.toString());
 }
 
@@ -369,6 +431,12 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         const cb = new URL(sp.redirect_uri!);
         cb.searchParams.set("code", code);
         if (sp.state) cb.searchParams.set("state", sp.state);
+        accountsAuthProbeLog("authorize.sso_redirect_with_code", {
+          subTail: subTail(sub),
+          clientIdTail: clientIdTail(sp.client_id),
+          appHint: sp.app_hint,
+          callbackOrigin: cb.origin,
+        });
         redirect(cb.toString());
       }
     }
