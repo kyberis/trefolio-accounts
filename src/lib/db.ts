@@ -407,7 +407,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
-       FROM users WHERE email = $1`,
+       FROM users WHERE lower(email) = $1`,
       [normalized],
     );
     return rows[0] ? pgRowToUser(rows[0]) : null;
@@ -416,7 +416,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   const row = getSqliteDb()
     .prepare(
       `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
-       FROM users WHERE email = ?`,
+       FROM users WHERE lower(email) = ?`,
     )
     .get(normalized) as any;
   return row ? sqliteRowToUser(row) : null;

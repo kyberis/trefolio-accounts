@@ -154,7 +154,7 @@ const en: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordSending: "Sending…",
   forgotPasswordSentTitle: "Check your email",
   forgotPasswordSentBody:
-    "If an account exists for that address with email/password sign-in, we sent a link to reset your password. The link expires in one hour.",
+    "If an account exists for that address with email/password sign-in, we sent a link to reset your password. The link expires in one hour. If nothing arrives within a few minutes, check spam or Promotions.",
   forgotPasswordBackToSignIn: "Back to sign in",
   forgotPasswordNetworkError: "Something went wrong. Please try again.",
   forgotPasswordInvalidEmail: "Please enter a valid email address.",
@@ -281,7 +281,7 @@ const de: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordSending: "Wird gesendet…",
   forgotPasswordSentTitle: "E-Mail prüfen",
   forgotPasswordSentBody:
-    "Wenn ein Konto mit E-Mail/Passwort-Anmeldung existiert, haben wir dir einen Link zum Zurücksetzen geschickt. Der Link ist eine Stunde gültig.",
+    "Wenn ein Konto mit E-Mail/Passwort-Anmeldung existiert, haben wir dir einen Link zum Zurücksetzen geschickt. Der Link ist eine Stunde gültig. Wenn nichts ankommt, prüfe bitte Spam oder Werbung.",
   forgotPasswordBackToSignIn: "Zurück zur Anmeldung",
   forgotPasswordNetworkError: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
   forgotPasswordInvalidEmail: "Bitte gib eine gültige E-Mail-Adresse ein.",
@@ -409,7 +409,7 @@ const es: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordSending: "Enviando…",
   forgotPasswordSentTitle: "Revisa tu correo",
   forgotPasswordSentBody:
-    "Si existe una cuenta con inicio por correo y contraseña, te enviamos un enlace para restablecerla. El enlace caduca en una hora.",
+    "Si existe una cuenta con inicio por correo y contraseña, te enviamos un enlace para restablecerla. El enlace caduca en una hora. Si no llega nada en unos minutos, revisa spam o Promociones.",
   forgotPasswordBackToSignIn: "Volver al inicio de sesión",
   forgotPasswordNetworkError: "Algo salió mal. Inténtalo de nuevo.",
   forgotPasswordInvalidEmail: "Introduce una dirección de correo válida.",
@@ -537,7 +537,7 @@ const fr: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordSending: "Envoi…",
   forgotPasswordSentTitle: "Vérifiez votre e-mail",
   forgotPasswordSentBody:
-    "Si un compte existe pour cette adresse avec connexion e-mail/mot de passe, nous avons envoyé un lien de réinitialisation. Il expire dans une heure.",
+    "Si un compte existe pour cette adresse avec connexion e-mail/mot de passe, nous avons envoyé un lien de réinitialisation. Il expire dans une heure. Si rien n’arrive après quelques minutes, vérifiez les courriers indésirables ou Promotions.",
   forgotPasswordBackToSignIn: "Retour à la connexion",
   forgotPasswordNetworkError: "Une erreur s’est produite. Réessayez.",
   forgotPasswordInvalidEmail: "Veuillez saisir une adresse e-mail valide.",
@@ -665,7 +665,7 @@ const it: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStri
   forgotPasswordSending: "Invio in corso…",
   forgotPasswordSentTitle: "Controlla la tua email",
   forgotPasswordSentBody:
-    "Se esiste un account con accesso email/password, abbiamo inviato un link per reimpostare la password. Il link scade tra un’ora.",
+    "Se esiste un account con accesso email/password, abbiamo inviato un link per reimpostare la password. Il link scade tra un’ora. Se non arriva nulla entro qualche minuto, controlla spam o Promozioni.",
   forgotPasswordBackToSignIn: "Torna all’accesso",
   forgotPasswordNetworkError: "Qualcosa è andato storto. Riprova.",
   forgotPasswordInvalidEmail: "Inserisci un indirizzo email valido.",

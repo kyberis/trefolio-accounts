@@ -88,7 +88,7 @@ export async function sendIdpPasswordResetEmail(
   const resend = new Resend(apiKey);
   const textBody = `${s.heading}\n\n${s.body}\n\n${resetUrl}\n\n${s.expiry}\n\n${s.ignore}`;
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: getFromAddress(),
       to: email,
       subject: s.subject,
@@ -96,6 +96,9 @@ export async function sendIdpPasswordResetEmail(
       text: textBody,
     });
     if (error) return { success: false, error: error.message };
+    if (data?.id) {
+      console.info("[idp-password-reset] Resend accepted, id:", data.id);
+    }
     return { success: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
