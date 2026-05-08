@@ -48,6 +48,7 @@ import {
   accountsAuthProbeWarn,
   emailDomainHint,
   subTail,
+  type HeaderBag,
 } from "@/lib/auth-probe-log";
 
 export const dynamic = "force-dynamic";
@@ -171,14 +172,23 @@ function readOidcParamsFromForm(formData: FormData): SP {
   };
 }
 
-function redirectAuthorizeError(sp: SP, error: string, probeExtras?: Record<string, unknown>) {
-  accountsAuthProbeWarn("authorize.flow_error", {
-    code: error,
-    clientIdTail: clientIdTail(sp.client_id),
-    appHint: sp.app_hint,
-    screenHint: sp.screen_hint,
-    ...(probeExtras ?? {}),
-  });
+function redirectAuthorizeError(
+  sp: SP,
+  error: string,
+  probeExtras?: Record<string, unknown>,
+  inboundHeaders?: HeaderBag,
+) {
+  accountsAuthProbeWarn(
+    "authorize.flow_error",
+    {
+      code: error,
+      clientIdTail: clientIdTail(sp.client_id),
+      appHint: sp.app_hint,
+      screenHint: sp.screen_hint,
+      ...(probeExtras ?? {}),
+    },
+    inboundHeaders,
+  );
   const usp = new URLSearchParams();
   if (sp.client_id) usp.set("client_id", sp.client_id);
   if (sp.redirect_uri) usp.set("redirect_uri", sp.redirect_uri);
@@ -205,6 +215,7 @@ async function handleSubmit(formData: FormData) {
   const passwordConfirm = String(formData.get("password_confirm") || "");
   const name = String(formData.get("name") || "");
   const params = readOidcParamsFromForm(formData);
+  const inbound = await headers();
   const formLocale = normalizeIdpLocale(params.ui_locales);
   const cookieStoreLocale = await cookies();
   const uiA = idpUiLocaleCookieAttributes();
@@ -222,36 +233,44 @@ async function handleSubmit(formData: FormData) {
 
   const client = findClient(params.client_id || "");
   if (!client || !params.redirect_uri || !client.redirectUris.includes(params.redirect_uri)) {
-    accountsAuthProbeWarn("authorize.submit_invalid_client", {
-      hasClientRow: Boolean(client),
-      hasRedirectUri: Boolean(params.redirect_uri),
-      redirectAllowed: Boolean(
-        client && params.redirect_uri && client.redirectUris.includes(params.redirect_uri),
-      ),
-      clientIdTail: clientIdTail(params.client_id),
-    });
+    accountsAuthProbeWarn(
+      "authorize.submit_invalid_client",
+      {
+        hasClientRow: Boolean(client),
+        hasRedirectUri: Boolean(params.redirect_uri),
+        redirectAllowed: Boolean(
+          client && params.redirect_uri && client.redirectUris.includes(params.redirect_uri),
+        ),
+        clientIdTail: clientIdTail(params.client_id),
+      },
+      inbound,
+    );
     redirect(`/oauth2/authorize?error=invalid_client`);
   }
 
-  accountsAuthProbeLog("authorize.submit_begin", {
-    intent,
-    emailDomainHint: emailDomainHint(email),
-    clientIdTail: clientIdTail(params.client_id),
-    appHint: params.app_hint,
-    screenHint: params.screen_hint,
-    uiLocales: params.ui_locales,
-  });
+  accountsAuthProbeLog(
+    "authorize.submit_begin",
+    {
+      intent,
+      emailDomainHint: emailDomainHint(email),
+      clientIdTail: clientIdTail(params.client_id),
+      appHint: params.app_hint,
+      screenHint: params.screen_hint,
+      uiLocales: params.ui_locales,
+    },
+    inbound,
+  );
 
   if (intent === "signup") {
     if (password.length < 8) {
       redirectAuthorizeError(params, "password_too_short", {
         emailDomainHint: emailDomainHint(email),
-      });
+      }, inbound);
     }
     if (password !== passwordConfirm) {
       redirectAuthorizeError(params, "password_mismatch", {
         emailDomainHint: emailDomainHint(email),
-      });
+      }, inbound);
     }
   }
 
@@ -262,12 +281,12 @@ async function handleSubmit(formData: FormData) {
       redirectAuthorizeError(params, "invalid_credentials", {
         reason: "user_not_found",
         emailDomainHint: emailDomainHint(email),
-      });
+      }, inbound);
     }
     if (isBlockedEmailDomain(email)) {
       redirectAuthorizeError(params, "blocked_email_domain", {
         emailDomainHint: emailDomainHint(email),
-      });
+      }, inbound);
     }
     if (!skipVerify) {
       const created = await createUser({
@@ -288,7 +307,7 @@ async function handleSubmit(formData: FormData) {
         redirectAuthorizeError(params, "verification_email_failed", {
           emailDomainHint: emailDomainHint(email),
           stage: "post_signup",
-        });
+        }, inbound);
       }
       const jar = await cookies();
       const pr = pendingResumeCookieAttributes();
@@ -321,7 +340,7 @@ async function handleSubmit(formData: FormData) {
         reason: "bad_password",
         emailDomainHint: emailDomainHint(email),
         subTail: subTail(user.sub),
-      });
+      }, inbound);
     }
     void recordIdpAuthAttemptSuccess(user.sub).catch(() => {});
   }
@@ -338,7 +357,7 @@ async function handleSubmit(formData: FormData) {
       redirectAuthorizeError(params, "verification_email_failed", {
         emailDomainHint: emailDomainHint(email),
         stage: "unverified_login",
-      });
+      }, inbound);
     }
     const jar = await cookies();
     const pr = pendingResumeCookieAttributes();
@@ -376,13 +395,17 @@ async function handleSubmit(formData: FormData) {
   const cb = new URL(params.redirect_uri!);
   cb.searchParams.set("code", code);
   if (params.state) cb.searchParams.set("state", params.state);
-  accountsAuthProbeLog("authorize.redirect_with_code", {
-    subTail: subTail(user.sub),
-    intent,
-    clientIdTail: clientIdTail(params.client_id),
-    appHint: params.app_hint,
-    callbackOrigin: cb.origin,
-  });
+  accountsAuthProbeLog(
+    "authorize.redirect_with_code",
+    {
+      subTail: subTail(user.sub),
+      intent,
+      clientIdTail: clientIdTail(params.client_id),
+      appHint: params.app_hint,
+      callbackOrigin: cb.origin,
+    },
+    inbound,
+  );
   redirect(cb.toString());
 }
 
@@ -431,12 +454,16 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         const cb = new URL(sp.redirect_uri!);
         cb.searchParams.set("code", code);
         if (sp.state) cb.searchParams.set("state", sp.state);
-        accountsAuthProbeLog("authorize.sso_redirect_with_code", {
-          subTail: subTail(sub),
-          clientIdTail: clientIdTail(sp.client_id),
-          appHint: sp.app_hint,
-          callbackOrigin: cb.origin,
-        });
+        accountsAuthProbeLog(
+          "authorize.sso_redirect_with_code",
+          {
+            subTail: subTail(sub),
+            clientIdTail: clientIdTail(sp.client_id),
+            appHint: sp.app_hint,
+            callbackOrigin: cb.origin,
+          },
+          hdrs,
+        );
         redirect(cb.toString());
       }
     }

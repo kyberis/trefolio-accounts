@@ -18,6 +18,7 @@ function clientIdTail(id: string | undefined): string | undefined {
 }
 
 export async function POST(req: NextRequest) {
+  const inbound = req.headers;
   const ct = req.headers.get("content-type") || "";
   let body: Record<string, string> = {};
   if (ct.includes("application/x-www-form-urlencoded")) {
@@ -27,20 +28,36 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   }
 
-  accountsAuthProbeLog("oauth2.token.request", {
-    contentTypeFamily: ct.includes("json") ? "json" : ct.includes("urlencoded") ? "form" : "other",
-    grantType: body.grant_type ?? "(missing)",
-    hasCode: Boolean(body.code),
-    hasRedirectUri: Boolean(body.redirect_uri),
-    hasCodeVerifier: Boolean(body.code_verifier),
-    viaBasicAuth: req.headers.get("authorization")?.toLowerCase().startsWith("basic ") ?? false,
-  });
+  accountsAuthProbeLog(
+    "oauth2.token.request",
+    {
+      contentTypeFamily: ct.includes("json") ? "json" : ct.includes("urlencoded") ? "form" : "other",
+      grantType: body.grant_type ?? "(missing)",
+      hasCode: Boolean(body.code),
+      codeLen: body.code?.length,
+      hasRedirectUri: Boolean(body.redirect_uri),
+      redirectHost: (() => {
+        try {
+          return body.redirect_uri ? new URL(body.redirect_uri).host : undefined;
+        } catch {
+          return "(unparseable)";
+        }
+      })(),
+      hasCodeVerifier: Boolean(body.code_verifier),
+      viaBasicAuth: req.headers.get("authorization")?.toLowerCase().startsWith("basic ") ?? false,
+    },
+    inbound,
+  );
 
   const grantType = body.grant_type;
   if (grantType !== "authorization_code") {
-    accountsAuthProbeWarn("oauth2.token.unsupported_grant", {
-      grantType: grantType ?? "(missing)",
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.unsupported_grant",
+      {
+        grantType: grantType ?? "(missing)",
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "unsupported_grant_type" }, { status: 400 });
   }
 
@@ -70,48 +87,72 @@ export async function POST(req: NextRequest) {
 
   const client = findClient(clientId);
   if (!client) {
-    accountsAuthProbeWarn("oauth2.token.invalid_client", {
-      reason: "unknown_client_id",
-      clientIdTail: clientIdTail(clientId),
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_client",
+      {
+        reason: "unknown_client_id",
+        clientIdTail: clientIdTail(clientId),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_client" }, { status: 401 });
   }
   if (clientSecret !== client.clientSecret) {
-    accountsAuthProbeWarn("oauth2.token.invalid_client", {
-      reason: "client_secret_mismatch",
-      clientIdTail: clientIdTail(clientId),
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_client",
+      {
+        reason: "client_secret_mismatch",
+        clientIdTail: clientIdTail(clientId),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_client", error_description: "client_secret mismatch" }, { status: 401 });
   }
 
   const stored = await consumeAuthCode(code);
   if (!stored) {
-    accountsAuthProbeWarn("oauth2.token.invalid_grant", {
-      reason: "unknown_or_expired_code",
-      clientIdTail: clientIdTail(clientId),
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_grant",
+      {
+        reason: "unknown_or_expired_code",
+        clientIdTail: clientIdTail(clientId),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   }
   if (stored.client_id !== clientId) {
-    accountsAuthProbeWarn("oauth2.token.invalid_grant", {
-      reason: "code_client_mismatch",
-      clientIdTail: clientIdTail(clientId),
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_grant",
+      {
+        reason: "code_client_mismatch",
+        clientIdTail: clientIdTail(clientId),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   }
   if (stored.redirect_uri !== redirectUri) {
-    accountsAuthProbeWarn("oauth2.token.invalid_grant", {
-      reason: "redirect_uri_mismatch",
-      clientIdTail: clientIdTail(clientId),
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_grant",
+      {
+        reason: "redirect_uri_mismatch",
+        clientIdTail: clientIdTail(clientId),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   }
   if (!verifyPkce(codeVerifier || "", stored.code_challenge, stored.code_challenge_method)) {
-    accountsAuthProbeWarn("oauth2.token.invalid_grant", {
-      reason: "pkce_failed",
-      clientIdTail: clientIdTail(clientId),
-      challengeMethod: stored.code_challenge_method,
-    });
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_grant",
+      {
+        reason: "pkce_failed",
+        clientIdTail: clientIdTail(clientId),
+        challengeMethod: stored.code_challenge_method,
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, { status: 400 });
   }
 
@@ -124,11 +165,23 @@ export async function POST(req: NextRequest) {
   });
   const accessToken = "dev-access-" + randomBytes(16).toString("base64url") + "." + stored.sub;
 
-  accountsAuthProbeLog("oauth2.token.issued", {
-    subTail: subTail(stored.sub),
-    clientIdTail: clientIdTail(clientId),
-    scope: stored.scope,
-  });
+  accountsAuthProbeLog(
+    "oauth2.token.issued",
+    {
+      subTail: subTail(stored.sub),
+      clientIdTail: clientIdTail(clientId),
+      scope: stored.scope,
+      noncePresent: Boolean(stored.nonce),
+      redirectHost: (() => {
+        try {
+          return stored.redirect_uri ? new URL(stored.redirect_uri).host : undefined;
+        } catch {
+          return undefined;
+        }
+      })(),
+    },
+    inbound,
+  );
 
   return NextResponse.json({
     access_token: accessToken,

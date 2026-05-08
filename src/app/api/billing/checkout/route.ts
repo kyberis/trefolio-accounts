@@ -41,12 +41,17 @@ function parseBody(raw: unknown): { interval: Interval; from: string } {
  * Creates a Stripe Checkout Session (subscription). Requires IdP session cookie.
  */
 export async function POST(req: NextRequest) {
+  const inbound = req.headers;
   const jar = await cookies();
   const sub = verifySession(jar.get(IDP_SESSION_COOKIE)?.value);
   if (!sub) {
-    accountsAuthProbeWarn("billing.checkout.unauthorized", {
-      reason: "no_idp_session_cookie",
-    });
+    accountsAuthProbeWarn(
+      "billing.checkout.unauthorized",
+      {
+        reason: "no_idp_session_cookie",
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "sign_in_required" }, { status: 401 });
   }
 
@@ -58,17 +63,33 @@ export async function POST(req: NextRequest) {
   }
   const { interval, from } = parseBody(json);
 
-  accountsAuthProbeLog("billing.checkout.accepted", {
-    subTail: subTail(sub),
-    interval,
-    from,
-  });
+  accountsAuthProbeLog(
+    "billing.checkout.accepted",
+    {
+      subTail: subTail(sub),
+      interval,
+      from,
+      stripeKeyMode: stripeSecretKeyMode(),
+      publicIssuerHost: (() => {
+        try {
+          return new URL(getRequestPublicIssuer(req)).host;
+        } catch {
+          return undefined;
+        }
+      })(),
+    },
+    inbound,
+  );
 
   const user = await findUserBySub(sub);
   if (!user) {
-    accountsAuthProbeWarn("billing.checkout.no_user_row", {
-      subTail: subTail(sub),
-    });
+    accountsAuthProbeWarn(
+      "billing.checkout.no_user_row",
+      {
+        subTail: subTail(sub),
+      },
+      inbound,
+    );
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
@@ -76,10 +97,14 @@ export async function POST(req: NextRequest) {
   const alreadyPro =
     ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
   if (alreadyPro) {
-    accountsAuthProbeLog("billing.checkout.already_pro", {
-      subTail: subTail(sub),
-      from,
-    });
+    accountsAuthProbeLog(
+      "billing.checkout.already_pro",
+      {
+        subTail: subTail(sub),
+        from,
+      },
+      inbound,
+    );
     return NextResponse.json(
       { error: "already_pro", message: "You already have an active Pro subscription." },
       { status: 409 },
@@ -88,10 +113,14 @@ export async function POST(req: NextRequest) {
 
   const priceId = getStripeProPriceId(interval);
   if (!priceId) {
-    accountsAuthProbeWarn("billing.checkout.not_configured", {
-      subTail: subTail(sub),
-      interval,
-    });
+    accountsAuthProbeWarn(
+      "billing.checkout.not_configured",
+      {
+        subTail: subTail(sub),
+        interval,
+      },
+      inbound,
+    );
     return NextResponse.json(
       { error: "billing_not_configured", message: "Stripe price IDs are not set on this server." },
       { status: 501 },
@@ -129,13 +158,17 @@ export async function POST(req: NextRequest) {
           `The Price ID must exist in that same Stripe account and mode (test vs live). ` +
           `On the trefolio-accounts Vercel project, set STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_PRO_ANNUAL ` +
           `(or STRIPE_PRICE_ID_PRO_MONTHLY / STRIPE_PRICE_ID_PRO_ANNUAL) to prices that belong to STRIPE_SECRET_KEY.`;
-        accountsAuthProbeWarn("billing.checkout.price_not_found", {
-          subTail: subTail(sub),
-          interval,
-          from,
-          priceIdSuffix: priceId.slice(-12),
-          msgPreview: msg.slice(0, 200),
-        });
+        accountsAuthProbeWarn(
+          "billing.checkout.price_not_found",
+          {
+            subTail: subTail(sub),
+            interval,
+            from,
+            priceIdSuffix: priceId.slice(-12),
+            msgPreview: msg.slice(0, 200),
+          },
+          inbound,
+        );
         return NextResponse.json(
           { error: "stripe_price_not_found", message: msg, hint },
           { status: 502 },
@@ -144,12 +177,16 @@ export async function POST(req: NextRequest) {
       throw retrieveErr;
     }
 
-    accountsAuthProbeLog("billing.checkout.stripe_create_begin", {
-      subTail: subTail(sub),
-      interval,
-      from,
-      hasStripeCustomerId: Boolean(customerId),
-    });
+    accountsAuthProbeLog(
+      "billing.checkout.stripe_create_begin",
+      {
+        subTail: subTail(sub),
+        interval,
+        from,
+        hasStripeCustomerId: Boolean(customerId),
+      },
+      inbound,
+    );
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -175,29 +212,41 @@ export async function POST(req: NextRequest) {
     });
 
     if (!checkout.url) {
-      accountsAuthProbeWarn("billing.checkout.empty_checkout_url", {
-        subTail: subTail(sub),
-        sessionIdSuffix: checkout.id?.slice(-12),
-      });
+      accountsAuthProbeWarn(
+        "billing.checkout.empty_checkout_url",
+        {
+          subTail: subTail(sub),
+          sessionIdSuffix: checkout.id?.slice(-12),
+        },
+        inbound,
+      );
       return NextResponse.json({ error: "checkout_failed" }, { status: 500 });
     }
 
-    accountsAuthProbeLog("billing.checkout.stripe_create_ok", {
-      subTail: subTail(sub),
-      interval,
-      sessionIdSuffix: checkout.id.slice(-12),
-    });
+    accountsAuthProbeLog(
+      "billing.checkout.stripe_create_ok",
+      {
+        subTail: subTail(sub),
+        interval,
+        sessionIdSuffix: checkout.id.slice(-12),
+      },
+      inbound,
+    );
 
     return NextResponse.json({ url: checkout.url });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[billing/checkout]", msg);
-    accountsAuthProbeWarn("billing.checkout.stripe_error", {
-      subTail: subTail(sub),
-      interval,
-      from,
-      msgPreview: msg.slice(0, 280),
-    });
+    accountsAuthProbeWarn(
+      "billing.checkout.stripe_error",
+      {
+        subTail: subTail(sub),
+        interval,
+        from,
+        msgPreview: msg.slice(0, 280),
+      },
+      inbound,
+    );
     if (msg.includes("STRIPE_SECRET_KEY")) {
       return NextResponse.json({ error: "stripe_not_configured" }, { status: 501 });
     }
