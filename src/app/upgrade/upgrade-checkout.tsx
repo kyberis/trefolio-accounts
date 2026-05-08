@@ -113,10 +113,13 @@ export default function UpgradeCheckout(props: {
           url?: string;
           error?: string;
           message?: string;
+          hint?: string;
         };
         if (!res.ok) {
           if (data.error === "already_pro") {
             setError("You already have Pro — open Clara or Will to use higher limits.");
+          } else if (data.hint) {
+            setError(`${data.message || data.error || "Checkout failed"}\n\n${data.hint}`);
           } else {
             setError(data.message || data.error || `Request failed (${res.status})`);
           }

@@ -541,6 +541,7 @@ a:hover {
   font-size: 14px;
   margin: 0;
   text-align: center;
+  white-space: pre-wrap;
 }
 
 .fine-print {

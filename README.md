@@ -107,6 +107,8 @@ Uses the **same Stripe account and Price IDs as Warren (trefolio.com)**. Configu
 
 Billing UI: **`/upgrade`** (requires IdP session cookie). Checkout API: **`POST /api/billing/checkout`** (JSON body `{ "interval": "monthly" \| "annual", "from": "clara" \| "will" \| "trefolio" }`).
 
+If Stripe returns **“No such price”**, the `price_…` in `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_ANNUAL` does not exist **for the Stripe account and mode** implied by **`STRIPE_SECRET_KEY`** on this deployment (e.g. live price ID with `sk_test_…`, or keys from a different Stripe account than where the product was created). Fix the Vercel env vars so all three match Warren’s production Stripe account.
+
 ## Notes
 
 - This repo is **dev-only**. Do not use these secrets in production.

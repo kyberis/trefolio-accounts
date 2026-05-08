@@ -7,7 +7,11 @@ import {
   getStripeCustomerBySub,
   upsertStripeCustomerRow,
 } from "@/lib/db";
-import { getIdpStripe, getStripeProPriceId } from "@/lib/idp-stripe";
+import {
+  getIdpStripe,
+  getStripeProPriceId,
+  stripeSecretKeyMode,
+} from "@/lib/idp-stripe";
 import { getRequestPublicIssuer } from "@/lib/public-url";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 
@@ -121,6 +125,17 @@ export async function POST(req: NextRequest) {
     console.error("[billing/checkout]", msg);
     if (msg.includes("STRIPE_SECRET_KEY")) {
       return NextResponse.json({ error: "stripe_not_configured" }, { status: 501 });
+    }
+    if (msg.includes("No such price")) {
+      const mode = stripeSecretKeyMode();
+      const hint =
+        `Stripe API key mode looks like "${mode}". ` +
+        `The Price ID must exist in that same Stripe account and mode (test vs live). ` +
+        `On the trefolio-accounts Vercel project, set STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_PRO_ANNUAL to prices created under the account that owns STRIPE_SECRET_KEY.`;
+      return NextResponse.json(
+        { error: "stripe_price_not_found", message: msg, hint },
+        { status: 502 },
+      );
     }
     return NextResponse.json({ error: "checkout_failed", message: msg }, { status: 500 });
   }

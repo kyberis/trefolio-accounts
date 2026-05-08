@@ -16,8 +16,24 @@ export function getIdpStripe(): Stripe {
   return _stripe;
 }
 
+/** Trim + strip zero-width / BOM that sometimes sneak in from copy-paste in Vercel. */
+export function sanitizeStripeId(value: string): string {
+  return value
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/^['"]+|['"]+$/g, "");
+}
+
 export function getStripeProPriceId(interval: "monthly" | "annual"): string {
   const envKey =
     interval === "annual" ? "STRIPE_PRICE_PRO_ANNUAL" : "STRIPE_PRICE_PRO_MONTHLY";
-  return (process.env[envKey] ?? "").trim();
+  return sanitizeStripeId(process.env[envKey] ?? "");
+}
+
+/** For operator hints only (never log full keys). */
+export function stripeSecretKeyMode(): "live" | "test" | "unknown" {
+  const k = (process.env.STRIPE_SECRET_KEY ?? "").trim();
+  if (k.startsWith("sk_live")) return "live";
+  if (k.startsWith("sk_test")) return "test";
+  return "unknown";
 }
