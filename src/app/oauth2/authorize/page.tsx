@@ -541,6 +541,11 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
                         defaultValue={isProd ? "" : "password123"}
                       />
                     </label>
+                    <p style={{ textAlign: "right", margin: "-4px 0 4px" }}>
+                      <a href="/account/forgot-password" className="divider-link">
+                        {t.forgotPasswordLink}
+                      </a>
+                    </p>
                     <button
                       type="submit"
                       name="intent"

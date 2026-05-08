@@ -24,6 +24,7 @@ export type IdpUiCopy = {
   errInvalidCredentialsLogin: string;
   errPasswordMismatch: string;
   errPasswordTooShort: string;
+  errPasswordTooLong: string;
   errVerificationEmailFailed: string;
   errBlockedEmailDomain: string;
   errInvalidClient: string;
@@ -82,9 +83,28 @@ export type IdpUiCopy = {
   productPortfolio: string;
   productAssistant: string;
   productNotes: string;
+  forgotPasswordLink: string;
+  forgotPasswordTitle: string;
+  forgotPasswordSubtitle: string;
+  forgotPasswordSubmit: string;
+  forgotPasswordSending: string;
+  forgotPasswordSentTitle: string;
+  forgotPasswordSentBody: string;
+  forgotPasswordBackToSignIn: string;
+  forgotPasswordNetworkError: string;
+  forgotPasswordInvalidEmail: string;
+  resetPasswordTitle: string;
+  resetPasswordSubtitle: string;
+  resetPasswordSubmit: string;
+  resetPasswordSubmitting: string;
+  resetPasswordSuccessTitle: string;
+  resetPasswordSuccessBody: string;
+  resetPasswordBackToSignIn: string;
+  resetPasswordNetworkError: string;
+  resetPasswordMissingToken: string;
 };
 
-const en: IdpUiCopy & { email: IdpEmailStrings } = {
+const en: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings } = {
   languageLabel: "Language",
   headingSignup: "Create your account",
   headingLogin: "Welcome back",
@@ -98,6 +118,7 @@ const en: IdpUiCopy & { email: IdpEmailStrings } = {
   errInvalidCredentialsLogin: "Email or password is incorrect.",
   errPasswordMismatch: "Passwords do not match. Type the same password twice.",
   errPasswordTooShort: "Password must be at least 8 characters.",
+  errPasswordTooLong: "Password must be at most 72 characters.",
   errVerificationEmailFailed:
     "We couldn’t send the verification email. Check RESEND_API_KEY on the server or try again.",
   errBlockedEmailDomain:
@@ -122,6 +143,27 @@ const en: IdpUiCopy & { email: IdpEmailStrings } = {
   newHere: "New here?",
   createNewAccount: "Create a new account",
   signInButton: "Sign in",
+  forgotPasswordLink: "Forgot password?",
+  forgotPasswordTitle: "Reset your password",
+  forgotPasswordSubtitle:
+    "Enter the email you use for trefolio. If an account exists with a password, we’ll send a reset link.",
+  forgotPasswordSubmit: "Send reset link",
+  forgotPasswordSending: "Sending…",
+  forgotPasswordSentTitle: "Check your email",
+  forgotPasswordSentBody:
+    "If an account exists for that address with email/password sign-in, we sent a link to reset your password. The link expires in one hour.",
+  forgotPasswordBackToSignIn: "Back to sign in",
+  forgotPasswordNetworkError: "Something went wrong. Please try again.",
+  forgotPasswordInvalidEmail: "Please enter a valid email address.",
+  resetPasswordTitle: "Choose a new password",
+  resetPasswordSubtitle: "Enter a new password for your trefolio account.",
+  resetPasswordSubmit: "Update password",
+  resetPasswordSubmitting: "Saving…",
+  resetPasswordSuccessTitle: "Password updated",
+  resetPasswordSuccessBody: "You can sign in with your new password.",
+  resetPasswordBackToSignIn: "Sign in",
+  resetPasswordNetworkError: "Something went wrong. Please try again.",
+  resetPasswordMissingToken: "This reset link is missing or invalid. Request a new one from the sign-in page.",
   legalIntro: "By continuing you agree to trefolio’s",
   legalTerms: "Terms",
   legalAnd: "and",
@@ -171,9 +213,20 @@ const en: IdpUiCopy & { email: IdpEmailStrings } = {
     htmlLang: "en",
     footerLine: "Every portfolio deserves a bit of luck 🍀",
   },
+  passwordResetEmail: {
+    subject: "Reset your password — trefolio",
+    heading: "Reset your password",
+    body: "We received a request to reset the password for your trefolio account. Use the button below to choose a new password. If you didn’t ask for this, you can ignore this email.",
+    ctaLabel: "Reset password",
+    fallbackLink: "Or copy and paste this link into your browser:",
+    expiry: "This link expires in 1 hour.",
+    ignore: "If you didn’t request a password reset, you can ignore this email.",
+    htmlLang: "en",
+    footerLine: "Every portfolio deserves a bit of luck 🍀",
+  },
 };
 
-const de: IdpUiCopy & { email: IdpEmailStrings } = {
+const de: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings } = {
   languageLabel: "Sprache",
   headingSignup: "Konto erstellen",
   headingLogin: "Willkommen zurück",
@@ -187,6 +240,7 @@ const de: IdpUiCopy & { email: IdpEmailStrings } = {
   errInvalidCredentialsLogin: "E-Mail oder Passwort ist falsch.",
   errPasswordMismatch: "Die Passwörter stimmen nicht überein. Zweimal dasselbe Passwort eingeben.",
   errPasswordTooShort: "Das Passwort muss mindestens 8 Zeichen haben.",
+  errPasswordTooLong: "Das Passwort darf höchstens 72 Zeichen haben.",
   errVerificationEmailFailed:
     "Die Bestätigungs-E-Mail konnte nicht gesendet werden. Prüfe RESEND_API_KEY auf dem Server oder versuche es erneut.",
   errBlockedEmailDomain:
@@ -211,6 +265,28 @@ const de: IdpUiCopy & { email: IdpEmailStrings } = {
   newHere: "Neu hier?",
   createNewAccount: "Neues Konto erstellen",
   signInButton: "Anmelden",
+  forgotPasswordLink: "Passwort vergessen?",
+  forgotPasswordTitle: "Passwort zurücksetzen",
+  forgotPasswordSubtitle:
+    "Gib die E-Mail ein, die du für trefolio nutzt. Wenn ein Konto mit Passwort existiert, senden wir dir einen Link.",
+  forgotPasswordSubmit: "Link senden",
+  forgotPasswordSending: "Wird gesendet…",
+  forgotPasswordSentTitle: "E-Mail prüfen",
+  forgotPasswordSentBody:
+    "Wenn ein Konto mit E-Mail/Passwort-Anmeldung existiert, haben wir dir einen Link zum Zurücksetzen geschickt. Der Link ist eine Stunde gültig.",
+  forgotPasswordBackToSignIn: "Zurück zur Anmeldung",
+  forgotPasswordNetworkError: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+  forgotPasswordInvalidEmail: "Bitte gib eine gültige E-Mail-Adresse ein.",
+  resetPasswordTitle: "Neues Passwort wählen",
+  resetPasswordSubtitle: "Lege ein neues Passwort für dein trefolio-Konto fest.",
+  resetPasswordSubmit: "Passwort aktualisieren",
+  resetPasswordSubmitting: "Wird gespeichert…",
+  resetPasswordSuccessTitle: "Passwort aktualisiert",
+  resetPasswordSuccessBody: "Du kannst dich jetzt mit dem neuen Passwort anmelden.",
+  resetPasswordBackToSignIn: "Anmelden",
+  resetPasswordNetworkError: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+  resetPasswordMissingToken:
+    "Dieser Link zum Zurücksetzen fehlt oder ist ungültig. Fordere einen neuen Link auf der Anmeldeseite an.",
   legalIntro: "Wenn du fortfährst, stimmst du den",
   legalTerms: "Nutzungsbedingungen",
   legalAnd: "und der",
@@ -260,9 +336,20 @@ const de: IdpUiCopy & { email: IdpEmailStrings } = {
     htmlLang: "de",
     footerLine: "Jedes Portfolio verdient ein bisschen Glück 🍀",
   },
+  passwordResetEmail: {
+    subject: "Passwort zurücksetzen — trefolio",
+    heading: "Passwort zurücksetzen",
+    body: "Wir haben eine Anfrage erhalten, das Passwort für dein trefolio-Konto zurückzusetzen. Nutze die Schaltfläche unten, um ein neues Passwort zu wählen. Wenn du das nicht warst, kannst du diese E-Mail ignorieren.",
+    ctaLabel: "Passwort zurücksetzen",
+    fallbackLink: "Oder kopiere diesen Link und füge ihn in den Browser ein:",
+    expiry: "Dieser Link ist 1 Stunde gültig.",
+    ignore: "Wenn du kein neues Passwort angefordert hast, kannst du diese E-Mail ignorieren.",
+    htmlLang: "de",
+    footerLine: "Jedes Portfolio verdient ein bisschen Glück 🍀",
+  },
 };
 
-const es: IdpUiCopy & { email: IdpEmailStrings } = {
+const es: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings } = {
   languageLabel: "Idioma",
   headingSignup: "Crea tu cuenta",
   headingLogin: "Bienvenido de nuevo",
@@ -276,6 +363,7 @@ const es: IdpUiCopy & { email: IdpEmailStrings } = {
   errInvalidCredentialsLogin: "El correo o la contraseña no son correctos.",
   errPasswordMismatch: "Las contraseñas no coinciden. Escribe la misma dos veces.",
   errPasswordTooShort: "La contraseña debe tener al menos 8 caracteres.",
+  errPasswordTooLong: "La contraseña puede tener como máximo 72 caracteres.",
   errVerificationEmailFailed:
     "No pudimos enviar el correo de verificación. Comprueba RESEND_API_KEY en el servidor o inténtalo de nuevo.",
   errBlockedEmailDomain:
@@ -300,6 +388,28 @@ const es: IdpUiCopy & { email: IdpEmailStrings } = {
   newHere: "¿Nuevo por aquí?",
   createNewAccount: "Crear una cuenta nueva",
   signInButton: "Iniciar sesión",
+  forgotPasswordLink: "¿Olvidaste la contraseña?",
+  forgotPasswordTitle: "Restablecer contraseña",
+  forgotPasswordSubtitle:
+    "Introduce el correo que usas en trefolio. Si existe una cuenta con contraseña, te enviaremos un enlace.",
+  forgotPasswordSubmit: "Enviar enlace",
+  forgotPasswordSending: "Enviando…",
+  forgotPasswordSentTitle: "Revisa tu correo",
+  forgotPasswordSentBody:
+    "Si existe una cuenta con inicio por correo y contraseña, te enviamos un enlace para restablecerla. El enlace caduca en una hora.",
+  forgotPasswordBackToSignIn: "Volver al inicio de sesión",
+  forgotPasswordNetworkError: "Algo salió mal. Inténtalo de nuevo.",
+  forgotPasswordInvalidEmail: "Introduce una dirección de correo válida.",
+  resetPasswordTitle: "Elige una contraseña nueva",
+  resetPasswordSubtitle: "Introduce una contraseña nueva para tu cuenta de trefolio.",
+  resetPasswordSubmit: "Actualizar contraseña",
+  resetPasswordSubmitting: "Guardando…",
+  resetPasswordSuccessTitle: "Contraseña actualizada",
+  resetPasswordSuccessBody: "Ya puedes iniciar sesión con la nueva contraseña.",
+  resetPasswordBackToSignIn: "Iniciar sesión",
+  resetPasswordNetworkError: "Algo salió mal. Inténtalo de nuevo.",
+  resetPasswordMissingToken:
+    "Falta el enlace o no es válido. Solicita uno nuevo desde la página de inicio de sesión.",
   legalIntro: "Al continuar aceptas los",
   legalTerms: "Términos",
   legalAnd: "y la",
@@ -349,9 +459,20 @@ const es: IdpUiCopy & { email: IdpEmailStrings } = {
     htmlLang: "es",
     footerLine: "Toda cartera merece un poco de suerte 🍀",
   },
+  passwordResetEmail: {
+    subject: "Restablece tu contraseña — trefolio",
+    heading: "Restablecer contraseña",
+    body: "Recibimos una solicitud para restablecer la contraseña de tu cuenta de trefolio. Usa el botón para elegir una nueva. Si no fuiste tú, puedes ignorar este mensaje.",
+    ctaLabel: "Restablecer contraseña",
+    fallbackLink: "O copia y pega este enlace en el navegador:",
+    expiry: "Este enlace caduca en 1 hora.",
+    ignore: "Si no pediste restablecer la contraseña, puedes ignorar este correo.",
+    htmlLang: "es",
+    footerLine: "Toda cartera merece un poco de suerte 🍀",
+  },
 };
 
-const fr: IdpUiCopy & { email: IdpEmailStrings } = {
+const fr: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings } = {
   languageLabel: "Langue",
   headingSignup: "Créer votre compte",
   headingLogin: "Bon retour",
@@ -365,6 +486,7 @@ const fr: IdpUiCopy & { email: IdpEmailStrings } = {
   errInvalidCredentialsLogin: "E-mail ou mot de passe incorrect.",
   errPasswordMismatch: "Les mots de passe ne correspondent pas. Saisissez le même mot de passe deux fois.",
   errPasswordTooShort: "Le mot de passe doit contenir au moins 8 caractères.",
+  errPasswordTooLong: "Le mot de passe doit contenir au plus 72 caractères.",
   errVerificationEmailFailed:
     "Impossible d’envoyer l’e-mail de vérification. Vérifiez RESEND_API_KEY sur le serveur ou réessayez.",
   errBlockedEmailDomain:
@@ -389,6 +511,28 @@ const fr: IdpUiCopy & { email: IdpEmailStrings } = {
   newHere: "Nouveau ?",
   createNewAccount: "Créer un nouveau compte",
   signInButton: "Se connecter",
+  forgotPasswordLink: "Mot de passe oublié ?",
+  forgotPasswordTitle: "Réinitialiser le mot de passe",
+  forgotPasswordSubtitle:
+    "Saisissez l’e-mail que vous utilisez pour trefolio. Si un compte avec mot de passe existe, nous enverrons un lien.",
+  forgotPasswordSubmit: "Envoyer le lien",
+  forgotPasswordSending: "Envoi…",
+  forgotPasswordSentTitle: "Vérifiez votre e-mail",
+  forgotPasswordSentBody:
+    "Si un compte existe pour cette adresse avec connexion e-mail/mot de passe, nous avons envoyé un lien de réinitialisation. Il expire dans une heure.",
+  forgotPasswordBackToSignIn: "Retour à la connexion",
+  forgotPasswordNetworkError: "Une erreur s’est produite. Réessayez.",
+  forgotPasswordInvalidEmail: "Veuillez saisir une adresse e-mail valide.",
+  resetPasswordTitle: "Choisir un nouveau mot de passe",
+  resetPasswordSubtitle: "Saisissez un nouveau mot de passe pour votre compte trefolio.",
+  resetPasswordSubmit: "Mettre à jour le mot de passe",
+  resetPasswordSubmitting: "Enregistrement…",
+  resetPasswordSuccessTitle: "Mot de passe mis à jour",
+  resetPasswordSuccessBody: "Vous pouvez vous connecter avec votre nouveau mot de passe.",
+  resetPasswordBackToSignIn: "Connexion",
+  resetPasswordNetworkError: "Une erreur s’est produite. Réessayez.",
+  resetPasswordMissingToken:
+    "Ce lien est manquant ou invalide. Demandez-en un nouveau depuis la page de connexion.",
   legalIntro: "En continuant, vous acceptez les",
   legalTerms: "Conditions",
   legalAnd: "et la",
@@ -438,9 +582,20 @@ const fr: IdpUiCopy & { email: IdpEmailStrings } = {
     htmlLang: "fr",
     footerLine: "Chaque portefeuille mérite un peu de chance 🍀",
   },
+  passwordResetEmail: {
+    subject: "Réinitialisez votre mot de passe — trefolio",
+    heading: "Réinitialiser le mot de passe",
+    body: "Nous avons reçu une demande de réinitialisation du mot de passe de votre compte trefolio. Utilisez le bouton ci-dessous pour en choisir un nouveau. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.",
+    ctaLabel: "Réinitialiser le mot de passe",
+    fallbackLink: "Ou copiez-collez ce lien dans votre navigateur :",
+    expiry: "Ce lien expire dans 1 heure.",
+    ignore: "Si vous n’avez pas demandé de réinitialisation, vous pouvez ignorer cet e-mail.",
+    htmlLang: "fr",
+    footerLine: "Chaque portefeuille mérite un peu de chance 🍀",
+  },
 };
 
-const it: IdpUiCopy & { email: IdpEmailStrings } = {
+const it: IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings } = {
   languageLabel: "Lingua",
   headingSignup: "Crea il tuo account",
   headingLogin: "Bentornato",
@@ -454,6 +609,7 @@ const it: IdpUiCopy & { email: IdpEmailStrings } = {
   errInvalidCredentialsLogin: "Email o password non corretti.",
   errPasswordMismatch: "Le password non coincidono. Digita la stessa password due volte.",
   errPasswordTooShort: "La password deve avere almeno 8 caratteri.",
+  errPasswordTooLong: "La password può avere al massimo 72 caratteri.",
   errVerificationEmailFailed:
     "Impossibile inviare l’email di verifica. Controlla RESEND_API_KEY sul server o riprova.",
   errBlockedEmailDomain:
@@ -478,6 +634,28 @@ const it: IdpUiCopy & { email: IdpEmailStrings } = {
   newHere: "Nuovo qui?",
   createNewAccount: "Crea un nuovo account",
   signInButton: "Accedi",
+  forgotPasswordLink: "Password dimenticata?",
+  forgotPasswordTitle: "Reimposta la password",
+  forgotPasswordSubtitle:
+    "Inserisci l’email che usi per trefolio. Se esiste un account con password, ti invieremo un link.",
+  forgotPasswordSubmit: "Invia link",
+  forgotPasswordSending: "Invio in corso…",
+  forgotPasswordSentTitle: "Controlla la tua email",
+  forgotPasswordSentBody:
+    "Se esiste un account con accesso email/password, abbiamo inviato un link per reimpostare la password. Il link scade tra un’ora.",
+  forgotPasswordBackToSignIn: "Torna all’accesso",
+  forgotPasswordNetworkError: "Qualcosa è andato storto. Riprova.",
+  forgotPasswordInvalidEmail: "Inserisci un indirizzo email valido.",
+  resetPasswordTitle: "Scegli una nuova password",
+  resetPasswordSubtitle: "Inserisci una nuova password per il tuo account trefolio.",
+  resetPasswordSubmit: "Aggiorna password",
+  resetPasswordSubmitting: "Salvataggio…",
+  resetPasswordSuccessTitle: "Password aggiornata",
+  resetPasswordSuccessBody: "Ora puoi accedere con la nuova password.",
+  resetPasswordBackToSignIn: "Accedi",
+  resetPasswordNetworkError: "Qualcosa è andato storto. Riprova.",
+  resetPasswordMissingToken:
+    "Questo link non è valido o manca. Richiedine uno nuovo dalla pagina di accesso.",
   legalIntro: "Continuando accetti i",
   legalTerms: "Termini",
   legalAnd: "e l’",
@@ -527,9 +705,23 @@ const it: IdpUiCopy & { email: IdpEmailStrings } = {
     htmlLang: "it",
     footerLine: "Ogni portafoglio merita un po’ di fortuna 🍀",
   },
+  passwordResetEmail: {
+    subject: "Reimposta la password — trefolio",
+    heading: "Reimposta la password",
+    body: "Abbiamo ricevuto una richiesta di reimpostazione della password per il tuo account trefolio. Usa il pulsante qui sotto per sceglierne una nuova. Se non sei stato tu, puoi ignorare questa email.",
+    ctaLabel: "Reimposta password",
+    fallbackLink: "Oppure copia e incolla questo link nel browser:",
+    expiry: "Questo link scade tra 1 ora.",
+    ignore: "Se non hai richiesto la reimpostazione della password, puoi ignorare questa email.",
+    htmlLang: "it",
+    footerLine: "Ogni portafoglio merita un po’ di fortuna 🍀",
+  },
 };
 
-const PACKS: Record<IdpLocale, IdpUiCopy & { email: IdpEmailStrings }> = {
+const PACKS: Record<
+  IdpLocale,
+  IdpUiCopy & { email: IdpEmailStrings; passwordResetEmail: IdpEmailStrings }
+> = {
   en,
   de,
   es,
@@ -538,12 +730,16 @@ const PACKS: Record<IdpLocale, IdpUiCopy & { email: IdpEmailStrings }> = {
 };
 
 export function getIdpUiCopy(locale: IdpLocale): IdpUiCopy {
-  const { email: _e, ...ui } = PACKS[locale];
+  const { email: _e, passwordResetEmail: _pr, ...ui } = PACKS[locale];
   return ui;
 }
 
 export function getIdpEmailStrings(locale: IdpLocale): IdpEmailStrings {
   return PACKS[locale].email;
+}
+
+export function getIdpPasswordResetEmailStrings(locale: IdpLocale): IdpEmailStrings {
+  return PACKS[locale].passwordResetEmail;
 }
 
 export const LANGUAGE_CHOICES: { locale: IdpLocale; label: string }[] = [
