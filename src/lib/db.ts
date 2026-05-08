@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { Pool } from "pg";
 
@@ -159,6 +159,14 @@ async function ensurePostgresSchema(): Promise<void> {
           expires_at BIGINT NOT NULL,
           used BOOLEAN NOT NULL DEFAULT FALSE
         );
+        CREATE TABLE IF NOT EXISTS oauth_token_replays (
+          code TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          redirect_uri TEXT NOT NULL,
+          verifier_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          expires_at BIGINT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS telegram_links (
           tg_user_id TEXT PRIMARY KEY,
           sub TEXT NOT NULL,
@@ -259,6 +267,14 @@ function getSqliteDb(): Database.Database {
       scope TEXT NOT NULL DEFAULT 'openid email profile',
       expires_at INTEGER NOT NULL,
       used INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS oauth_token_replays (
+      code TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      verifier_hash TEXT NOT NULL,
+      response_json TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS telegram_links (
       tg_user_id TEXT PRIMARY KEY,
@@ -695,7 +711,8 @@ export async function saveAuthCode(args: {
   nonce?: string | null;
   scope?: string;
 }): Promise<void> {
-  const expiresAt = Date.now() + 60_000;
+  /** OAuth authz codes should be short-lived (RFC 6749); 60s was too tight for IdP→Google→IdP→app + serverless latency. */
+  const expiresAt = Date.now() + 10 * 60_000;
   if (usePostgres) {
     await ensurePostgresSchema();
     await getPool().query(
@@ -735,18 +752,26 @@ export async function saveAuthCode(args: {
     );
 }
 
-export async function consumeAuthCode(code: string): Promise<
-  | {
-      sub: string;
-      client_id: string;
-      redirect_uri: string;
-      code_challenge: string;
-      code_challenge_method: string;
-      nonce: string | null;
-      scope: string;
-    }
-  | null
-> {
+/** PKCE verifier hash for idempotent duplicate token POSTs (OAuth code single-use + flaky retries). */
+export function hashPkceVerifier(verifier: string): string {
+  return createHash("sha256").update(verifier, "utf8").digest("base64url");
+}
+
+export type ConsumedAuthCode = {
+  sub: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  nonce: string | null;
+  scope: string;
+};
+
+export type ConsumeAuthCodeResult =
+  | { ok: true; stored: ConsumedAuthCode }
+  | { ok: false; reason: "not_found" | "already_used" | "expired" };
+
+export async function consumeAuthCode(code: string): Promise<ConsumeAuthCodeResult> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const client = await getPool().connect();
@@ -758,20 +783,31 @@ export async function consumeAuthCode(code: string): Promise<
         [code],
       );
       const row = rows[0];
-      if (!row || row.used || Number(row.expires_at) < Date.now()) {
+      if (!row) {
         await client.query("ROLLBACK");
-        return null;
+        return { ok: false, reason: "not_found" };
+      }
+      if (row.used) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "already_used" };
+      }
+      if (Number(row.expires_at) < Date.now()) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "expired" };
       }
       await client.query(`UPDATE auth_codes SET used = TRUE WHERE code = $1`, [code]);
       await client.query("COMMIT");
       return {
-        sub: String(row.sub),
-        client_id: String(row.client_id),
-        redirect_uri: String(row.redirect_uri),
-        code_challenge: String(row.code_challenge),
-        code_challenge_method: String(row.code_challenge_method),
-        nonce: row.nonce ?? null,
-        scope: String(row.scope ?? "openid email profile"),
+        ok: true,
+        stored: {
+          sub: String(row.sub),
+          client_id: String(row.client_id),
+          redirect_uri: String(row.redirect_uri),
+          code_challenge: String(row.code_challenge),
+          code_challenge_method: String(row.code_challenge_method),
+          nonce: row.nonce ?? null,
+          scope: String(row.scope ?? "openid email profile"),
+        },
       };
     } catch (err) {
       await client.query("ROLLBACK");
@@ -787,19 +823,100 @@ export async function consumeAuthCode(code: string): Promise<
       `SELECT sub, client_id, redirect_uri, code_challenge, code_challenge_method, nonce, scope, expires_at, used FROM auth_codes WHERE code = ?`,
     )
     .get(code) as any;
-  if (!row) return null;
-  if (row.used) return null;
-  if (Number(row.expires_at) < Date.now()) return null;
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.used) return { ok: false, reason: "already_used" };
+  if (Number(row.expires_at) < Date.now()) return { ok: false, reason: "expired" };
   db.prepare(`UPDATE auth_codes SET used = 1 WHERE code = ?`).run(code);
   return {
-    sub: String(row.sub),
-    client_id: String(row.client_id),
-    redirect_uri: String(row.redirect_uri),
-    code_challenge: String(row.code_challenge),
-    code_challenge_method: String(row.code_challenge_method),
-    nonce: row.nonce ?? null,
-    scope: String(row.scope ?? "openid email profile"),
+    ok: true,
+    stored: {
+      sub: String(row.sub),
+      client_id: String(row.client_id),
+      redirect_uri: String(row.redirect_uri),
+      code_challenge: String(row.code_challenge),
+      code_challenge_method: String(row.code_challenge_method),
+      nonce: row.nonce ?? null,
+      scope: String(row.scope ?? "openid email profile"),
+    },
   };
+}
+
+export async function saveOAuthTokenReplay(args: {
+  code: string;
+  clientId: string;
+  redirectUri: string;
+  verifierHash: string;
+  responseJson: string;
+  expiresAt: number;
+}): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `INSERT INTO oauth_token_replays (code, client_id, redirect_uri, verifier_hash, response_json, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (code) DO UPDATE SET
+         client_id = EXCLUDED.client_id,
+         redirect_uri = EXCLUDED.redirect_uri,
+         verifier_hash = EXCLUDED.verifier_hash,
+         response_json = EXCLUDED.response_json,
+         expires_at = EXCLUDED.expires_at`,
+      [
+        args.code,
+        args.clientId,
+        args.redirectUri,
+        args.verifierHash,
+        args.responseJson,
+        args.expiresAt,
+      ],
+    );
+    return;
+  }
+  getSqliteDb()
+    .prepare(
+      `INSERT INTO oauth_token_replays (code, client_id, redirect_uri, verifier_hash, response_json, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(code) DO UPDATE SET
+         client_id = excluded.client_id,
+         redirect_uri = excluded.redirect_uri,
+         verifier_hash = excluded.verifier_hash,
+         response_json = excluded.response_json,
+         expires_at = excluded.expires_at`,
+    )
+    .run(
+      args.code,
+      args.clientId,
+      args.redirectUri,
+      args.verifierHash,
+      args.responseJson,
+      args.expiresAt,
+    );
+}
+
+export async function findMatchingOAuthTokenReplay(args: {
+  code: string;
+  clientId: string;
+  redirectUri: string;
+  verifierHash: string;
+}): Promise<string | null> {
+  const now = Date.now();
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT response_json FROM oauth_token_replays
+       WHERE code = $1 AND client_id = $2 AND redirect_uri = $3 AND verifier_hash = $4 AND expires_at > $5`,
+      [args.code, args.clientId, args.redirectUri, args.verifierHash, now],
+    );
+    return rows[0] ? String(rows[0].response_json) : null;
+  }
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT response_json FROM oauth_token_replays
+       WHERE code = ? AND client_id = ? AND redirect_uri = ? AND verifier_hash = ? AND expires_at > ?`,
+    )
+    .get(args.code, args.clientId, args.redirectUri, args.verifierHash, now) as
+    | { response_json: string }
+    | undefined;
+  return row ? String(row.response_json) : null;
 }
 
 export async function linkTelegram(tgUserId: string, sub: string): Promise<void> {

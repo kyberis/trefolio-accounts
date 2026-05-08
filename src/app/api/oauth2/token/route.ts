@@ -4,12 +4,64 @@ import {
   accountsAuthProbeWarn,
   subTail,
 } from "@/lib/auth-probe-log";
-import { consumeAuthCode } from "@/lib/db";
 import { findClient, verifyPkce, buildIdToken } from "@/lib/oidc";
+import {
+  consumeAuthCode,
+  findMatchingOAuthTokenReplay,
+  hashPkceVerifier,
+  saveOAuthTokenReplay,
+  type ConsumeAuthCodeResult,
+} from "@/lib/db";
 import { getPublicIssuer } from "@/lib/public-url";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
+
+/** Mitigate read-replica lag: authorize INSERT may not be visible immediately. */
+const CODE_LOOKUP_RETRY_MS = [0, 80, 160];
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+function failedConsume(
+  r: ConsumeAuthCodeResult,
+): Extract<ConsumeAuthCodeResult, { ok: false }> {
+  if (r.ok) {
+    throw new Error("failedConsume: expected error branch");
+  }
+  return r as Extract<ConsumeAuthCodeResult, { ok: false }>;
+}
+
+async function consumeAuthCodeWithSourceLagRetry(
+  code: string,
+  inbound: Headers,
+): Promise<ConsumeAuthCodeResult> {
+  let lastNotFound: ConsumeAuthCodeResult | undefined;
+  for (let i = 0; i < CODE_LOOKUP_RETRY_MS.length; i++) {
+    if (CODE_LOOKUP_RETRY_MS[i]! > 0) {
+      await sleep(CODE_LOOKUP_RETRY_MS[i]!);
+    }
+    const result = await consumeAuthCode(code);
+    if (result.ok) {
+      if (i > 0) {
+        accountsAuthProbeLog(
+          "oauth2.token.code_resolved_after_retry",
+          { attempt: i + 1 },
+          inbound,
+        );
+      }
+      return result;
+    }
+    const { reason } = failedConsume(result);
+    if (reason === "not_found") {
+      lastNotFound = result;
+      continue;
+    }
+    return result;
+  }
+  return lastNotFound!;
+}
 
 function clientIdTail(id: string | undefined): string | undefined {
   if (!id) return undefined;
@@ -85,6 +137,15 @@ export async function POST(req: NextRequest) {
   const clientSecret = basicSecret || body.client_secret;
   const codeVerifier = body.code_verifier;
 
+  if (!code || !redirectUri) {
+    accountsAuthProbeWarn(
+      "oauth2.token.invalid_request",
+      { missingCode: !code, missingRedirectUri: !redirectUri },
+      inbound,
+    );
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  }
+
   const client = findClient(clientId);
   if (!client) {
     accountsAuthProbeWarn(
@@ -109,18 +170,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_client", error_description: "client_secret mismatch" }, { status: 401 });
   }
 
-  const stored = await consumeAuthCode(code);
-  if (!stored) {
+  const verifierHash = hashPkceVerifier(codeVerifier || "");
+  const consumed = await consumeAuthCodeWithSourceLagRetry(code, inbound);
+  if (consumed.ok === false) {
+    const { reason: failReason } = failedConsume(consumed);
+    const replayJson = await findMatchingOAuthTokenReplay({
+      code,
+      clientId,
+      redirectUri,
+      verifierHash,
+    });
+    if (replayJson) {
+      accountsAuthProbeLog(
+        "oauth2.token.replay_ok",
+        {
+          priorReason: failReason,
+          clientIdTail: clientIdTail(clientId),
+        },
+        inbound,
+      );
+      return NextResponse.json(JSON.parse(replayJson));
+    }
     accountsAuthProbeWarn(
       "oauth2.token.invalid_grant",
       {
-        reason: "unknown_or_expired_code",
+        reason:
+          failReason === "not_found"
+            ? "code_not_found"
+            : failReason === "already_used"
+              ? "code_already_used"
+              : "code_expired",
         clientIdTail: clientIdTail(clientId),
       },
       inbound,
     );
     return NextResponse.json({ error: "invalid_grant" }, { status: 400 });
   }
+  const stored = consumed.stored;
   if (stored.client_id !== clientId) {
     accountsAuthProbeWarn(
       "oauth2.token.invalid_grant",
@@ -183,11 +269,23 @@ export async function POST(req: NextRequest) {
     inbound,
   );
 
-  return NextResponse.json({
+  const tokenResponse = {
     access_token: accessToken,
     token_type: "Bearer",
     expires_in: 900,
     id_token: idToken,
     scope: stored.scope,
+  };
+  await saveOAuthTokenReplay({
+    code,
+    clientId,
+    redirectUri,
+    verifierHash,
+    responseJson: JSON.stringify(tokenResponse),
+    expiresAt: Date.now() + 15 * 60_000,
+  }).catch((err) => {
+    console.error("[oauth2/token] saveOAuthTokenReplay failed", err);
   });
+
+  return NextResponse.json(tokenResponse);
 }
