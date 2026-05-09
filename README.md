@@ -21,6 +21,7 @@ This project emulates `user.trefolio.com` on `http://localhost:3300`.
   - `/v1/telegram/link`
   - `/v1/telegram/by-id/:tgUserId`
   - `/v1/admin/users/import`
+- Personal access tokens (MCP): users mint `tfp_pat_…` on `/account/developer`; apps validate with `POST /api/v1/pat/introspect` using env **`TREFOLIO_PAT_INTROSPECTION_SECRET`** (same value on trefolio, Clara, Will). See [`docs/mcp-ecosystem.md`](./docs/mcp-ecosystem.md).
 - Dev UI styled as the trefolio ecosystem (Warren + Clara + Will).
 
 ## Node.js and `better-sqlite3`
@@ -108,6 +109,10 @@ Uses the **same Stripe account and Price IDs as Warren (trefolio.com)**. Configu
 Billing UI: **`/upgrade`** (requires IdP session cookie). Checkout API: **`POST /api/billing/checkout`** (JSON body `{ "interval": "monthly" \| "annual", "from": "clara" \| "will" \| "trefolio" }`).
 
 If Stripe returns **“No such price”**, the `price_…` in `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_ANNUAL` does not exist **for the Stripe account and mode** implied by **`STRIPE_SECRET_KEY`** on this deployment (e.g. live price ID with `sk_test_…`, or keys from a different Stripe account than where the product was created). Fix the Vercel env vars so all three match Warren’s production Stripe account.
+
+## Unit tests
+
+`npm test` runs Vitest (**Node.js 22** required — same as `predev` / `prebuild`). Covers PAT crypto, S2S introspection auth helpers, and `POST /api/v1/pat/introspect`.
 
 ## Notes
 

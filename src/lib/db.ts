@@ -230,6 +230,19 @@ async function ensurePostgresSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS subscription_checkout_intents_created_idx
           ON subscription_checkout_intents (created_at DESC);
+        CREATE TABLE IF NOT EXISTS personal_access_tokens (
+          id TEXT PRIMARY KEY,
+          sub TEXT NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          prefix TEXT NOT NULL,
+          name TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_used_at TIMESTAMPTZ,
+          expires_at TIMESTAMPTZ,
+          revoked_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS personal_access_tokens_sub_idx
+          ON personal_access_tokens (sub);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_token TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_plan TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_days INTEGER NOT NULL DEFAULT 0;
@@ -337,6 +350,19 @@ function getSqliteDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS subscription_checkout_intents_created_idx
       ON subscription_checkout_intents (created_at DESC);
+    CREATE TABLE IF NOT EXISTS personal_access_tokens (
+      id TEXT PRIMARY KEY,
+      sub TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      prefix TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      expires_at TEXT,
+      revoked_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS personal_access_tokens_sub_idx
+      ON personal_access_tokens (sub);
   `);
   safeAlter(db, `ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN google_id TEXT`);
@@ -1730,4 +1756,177 @@ export async function activateTrialForSub(
   }
 
   return { ok: true, proUntil };
+}
+
+// ── Personal access tokens (MCP / AI integrations, Clara + Will + trefolio) ──
+
+export type PersonalAccessTokenListRow = {
+  id: string;
+  prefix: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+};
+
+function newPatRowId(): string {
+  return "pat_" + randomBytes(18).toString("hex");
+}
+
+export async function listPersonalAccessTokensForSub(
+  sub: string,
+): Promise<PersonalAccessTokenListRow[]> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT id, prefix, name, created_at, last_used_at, expires_at, revoked_at
+       FROM personal_access_tokens WHERE sub = $1 ORDER BY created_at DESC`,
+      [sub],
+    );
+    return rows.map((row: any) => ({
+      id: String(row.id),
+      prefix: String(row.prefix),
+      name: String(row.name ?? ""),
+      created_at: toIsoString(row.created_at) ?? "",
+      last_used_at: toIsoString(row.last_used_at),
+      expires_at: toIsoString(row.expires_at),
+      revoked_at: toIsoString(row.revoked_at),
+    }));
+  }
+  const rows = getSqliteDb()
+    .prepare(
+      `SELECT id, prefix, name, created_at, last_used_at, expires_at, revoked_at
+       FROM personal_access_tokens WHERE sub = ? ORDER BY datetime(created_at) DESC`,
+    )
+    .all(sub) as any[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    prefix: String(row.prefix),
+    name: String(row.name ?? ""),
+    created_at: String(row.created_at ?? ""),
+    last_used_at: row.last_used_at ? String(row.last_used_at) : null,
+    expires_at: row.expires_at ? String(row.expires_at) : null,
+    revoked_at: row.revoked_at ? String(row.revoked_at) : null,
+  }));
+}
+
+/** Count tokens created in the rolling last hour (for rate limiting mint). */
+export async function countPersonalAccessTokensCreatedInLastHour(sub: string): Promise<number> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT COUNT(*)::int AS c FROM personal_access_tokens
+       WHERE sub = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+      [sub],
+    );
+    return Number(rows[0]?.c ?? 0);
+  }
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT COUNT(*) AS c FROM personal_access_tokens
+       WHERE sub = ? AND datetime(created_at) > datetime('now', '-1 hour')`,
+    )
+    .get(sub) as { c: number };
+  return Number(row?.c ?? 0);
+}
+
+export async function insertPersonalAccessToken(input: {
+  sub: string;
+  tokenHash: string;
+  prefix: string;
+  name: string;
+  expiresAt: Date | null;
+}): Promise<{ id: string }> {
+  const id = newPatRowId();
+  const name = input.name.trim().slice(0, 80) || "MCP";
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, input.sub, input.tokenHash, input.prefix, name, input.expiresAt],
+    );
+    return { id };
+  }
+  getSqliteDb()
+    .prepare(
+      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.sub,
+      input.tokenHash,
+      input.prefix,
+      name,
+      input.expiresAt ? input.expiresAt.toISOString() : null,
+    );
+  return { id };
+}
+
+/** Revoke if id belongs to sub. Returns whether a row was updated. */
+export async function revokePersonalAccessToken(id: string, sub: string): Promise<boolean> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const res = await getPool().query(
+      `UPDATE personal_access_tokens SET revoked_at = NOW()
+       WHERE id = $1 AND sub = $2 AND revoked_at IS NULL`,
+      [id, sub],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+  const r = getSqliteDb()
+    .prepare(
+      `UPDATE personal_access_tokens SET revoked_at = datetime('now')
+       WHERE id = ? AND sub = ? AND (revoked_at IS NULL OR revoked_at = '')`,
+    )
+    .run(id, sub);
+  return r.changes > 0;
+}
+
+export type PatIntrospectHit = { id: string; sub: string };
+
+/**
+ * Lookup by SHA-256 hex hash of plaintext token. Returns null if missing,
+ * revoked, expired, or unknown.
+ */
+export async function findActivePersonalAccessTokenByHash(
+  tokenHash: string,
+): Promise<PatIntrospectHit | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT id, sub FROM personal_access_tokens
+       WHERE token_hash = $1 AND revoked_at IS NULL
+         AND (expires_at IS NULL OR expires_at > NOW())`,
+      [tokenHash],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { id: String(row.id), sub: String(row.sub) };
+  }
+  const row = getSqliteDb()
+    .prepare(
+      `SELECT id, sub FROM personal_access_tokens
+       WHERE token_hash = ?
+         AND (revoked_at IS NULL OR revoked_at = '')
+         AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
+    )
+    .get(tokenHash) as { id: string; sub: string } | undefined;
+  if (!row) return null;
+  return { id: String(row.id), sub: String(row.sub) };
+}
+
+export async function touchPersonalAccessTokenLastUsed(id: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(`UPDATE personal_access_tokens SET last_used_at = NOW() WHERE id = $1`, [
+      id,
+    ]);
+    return;
+  }
+  getSqliteDb()
+    .prepare(`UPDATE personal_access_tokens SET last_used_at = datetime('now') WHERE id = ?`)
+    .run(id);
 }

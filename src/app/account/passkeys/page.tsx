@@ -111,6 +111,9 @@ export default async function PasskeysPage() {
               or device PIN — no password to remember. Add one passkey per
               device you trust.
             </p>
+            <p style={{ fontSize: 14, marginTop: 8 }}>
+              <a href="/account/developer">AI / MCP tokens</a> (Claude, Cursor, …) — one token for all apps.
+            </p>
           </div>
 
           <PasskeyManager />
