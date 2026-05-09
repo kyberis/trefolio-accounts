@@ -272,6 +272,18 @@ a:hover {
   font-weight: 500;
 }
 
+.label-block {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.space-y-form > * + * {
+  margin-top: 12px;
+}
+
 .input {
   width: 100%;
   border-radius: var(--radius-sm);

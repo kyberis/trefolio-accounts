@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     email: user.email,
     email_verified: user.email_verified === 1,
     name: user.name,
+    picture: user.avatar_url?.trim() || null,
+    tax_residency: user.tax_residency?.trim() || null,
     pro_until: ent.pro_until,
     entitlements: {
       trefolio_pro: ent.plan === "pro",

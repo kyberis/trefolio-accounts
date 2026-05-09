@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
       googleId: body.googleId ? String(body.googleId) : undefined,
       appleId: body.appleId ? String(body.appleId) : undefined,
       emailVerified: Boolean(body.emailVerified),
+      avatarUrl: body.avatarUrl ? String(body.avatarUrl) : undefined,
+      taxResidency: body.taxResidency ? String(body.taxResidency) : undefined,
     });
     created = true;
   } else {
@@ -65,6 +67,14 @@ export async function POST(req: NextRequest) {
           : user.apple_id,
       email_verified:
         user.email_verified === 1 || Boolean(body.emailVerified) ? 1 : 0,
+      avatar_url:
+        body.avatarUrl !== undefined && String(body.avatarUrl).trim()
+          ? String(body.avatarUrl).trim()
+          : user.avatar_url,
+      tax_residency:
+        body.taxResidency !== undefined && String(body.taxResidency).trim()
+          ? String(body.taxResidency).trim()
+          : user.tax_residency,
     });
   }
 

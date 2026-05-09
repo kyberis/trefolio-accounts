@@ -83,6 +83,8 @@ export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs
     email: user?.email ?? null,
     email_verified: Boolean(user?.email_verified),
     name: user?.name ?? "",
+    picture: user?.avatar_url?.trim() ? user.avatar_url.trim() : null,
+    tax_residency: user?.tax_residency?.trim() ? user.tax_residency.trim() : null,
     pro_until: ent.pro_until,
     entitlements: {
       trefolio_pro: isPro,

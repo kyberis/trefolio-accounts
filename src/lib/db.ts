@@ -4,6 +4,10 @@ import path from "node:path";
 import { Pool } from "pg";
 
 import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
+import {
+  inferIdpSignupAuthProvider,
+  notifyAdminOfNewIdpUser,
+} from "@/lib/idp-admin-new-user-notify";
 
 const postgresUrl = process.env.DATABASE_URL ?? "";
 const usePostgres =
@@ -66,6 +70,10 @@ export interface DbUser {
   email_verified: number;
   /** BCP47 primary language tag for UI + transactional email (en, de, es, fr, it). */
   locale: string;
+  /** Profile image URL; surfaced as OIDC `picture`. */
+  avatar_url: string;
+  /** ISO 3166-1 alpha-2 country code for tax residency (optional). */
+  tax_residency: string;
 }
 
 export interface SeedUserRow {
@@ -115,6 +123,8 @@ function sqliteRowToUser(row: any): DbUser {
     apple_id: row.apple_id ?? null,
     email_verified: Number(row.email_verified ?? 0) ? 1 : 0,
     locale: String(row.locale ?? "en"),
+    avatar_url: String(row.avatar_url ?? ""),
+    tax_residency: String(row.tax_residency ?? ""),
   };
 }
 
@@ -129,6 +139,8 @@ function pgRowToUser(row: any): DbUser {
     apple_id: row.apple_id ?? null,
     email_verified: row.email_verified ? 1 : 0,
     locale: String(row.locale ?? "en"),
+    avatar_url: String(row.avatar_url ?? ""),
+    tax_residency: String(row.tax_residency ?? ""),
   };
 }
 
@@ -250,6 +262,8 @@ async function ensurePostgresSchema(): Promise<void> {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_token TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_invited_at TIMESTAMPTZ;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_activated_at TIMESTAMPTZ;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_residency TEXT NOT NULL DEFAULT '';
       `);
     } finally {
       client.release();
@@ -378,6 +392,8 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN trial_token TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN trial_invited_at TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN trial_activated_at TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN tax_residency TEXT NOT NULL DEFAULT ''`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -474,7 +490,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE lower(email) = $1`,
       [normalized],
     );
@@ -483,7 +499,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE lower(email) = ?`,
     )
     .get(normalized) as any;
@@ -494,7 +510,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE google_id = $1`,
       [googleId],
     );
@@ -502,7 +518,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   }
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE google_id = ?`,
     )
     .get(googleId) as any;
@@ -513,7 +529,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE sub = $1`,
       [sub],
     );
@@ -522,7 +538,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
        FROM users WHERE sub = ?`,
     )
     .get(sub) as any;
@@ -595,20 +611,26 @@ export async function createUser(args: {
   appleId?: string;
   emailVerified?: boolean;
   locale?: string;
+  avatarUrl?: string;
+  taxResidency?: string;
 }): Promise<DbUser> {
   const sub = newSub();
   const email = args.email.trim().toLowerCase();
   const passwordPlain = args.passwordPlain ?? "";
   const passwordHash = args.passwordHash ?? "";
   const locale = normalizeIdpLocale(args.locale);
+  const avatarUrl = args.avatarUrl ?? "";
+  const taxResidency = args.taxResidency ?? "";
+
+  let created: DbUser;
 
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency`,
       [
         sub,
         email,
@@ -619,6 +641,8 @@ export async function createUser(args: {
         args.appleId ?? null,
         Boolean(args.emailVerified),
         locale,
+        args.avatarUrl ?? "",
+        args.taxResidency ?? "",
       ],
     );
     await getPool().query(
@@ -626,38 +650,51 @@ export async function createUser(args: {
        ON CONFLICT (sub) DO NOTHING`,
       [sub],
     );
-    return pgRowToUser(rows[0]);
-  }
-
-  getSqliteDb()
-    .prepare(
-      `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
+    created = pgRowToUser(rows[0]);
+  } else {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO users (
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sub,
+        email,
+        args.name,
+        passwordPlain,
+        passwordHash,
+        args.googleId ?? null,
+        args.appleId ?? null,
+        args.emailVerified ? 1 : 0,
+        locale,
+        avatarUrl,
+        taxResidency,
+      );
+    getSqliteDb().prepare(`INSERT INTO entitlements (sub, plan) VALUES (?, 'free')`).run(sub);
+    created = {
       sub,
       email,
-      args.name,
-      passwordPlain,
-      passwordHash,
-      args.googleId ?? null,
-      args.appleId ?? null,
-      args.emailVerified ? 1 : 0,
+      name: args.name,
+      password_plain: passwordPlain,
+      password_hash: passwordHash,
+      google_id: args.googleId ?? null,
+      apple_id: args.appleId ?? null,
+      email_verified: args.emailVerified ? 1 : 0,
       locale,
-    );
-  getSqliteDb().prepare(`INSERT INTO entitlements (sub, plan) VALUES (?, 'free')`).run(sub);
-  return {
-    sub,
-    email,
-    name: args.name,
-    password_plain: passwordPlain,
-    password_hash: passwordHash,
-    google_id: args.googleId ?? null,
-    apple_id: args.appleId ?? null,
-    email_verified: args.emailVerified ? 1 : 0,
-    locale,
-  };
+      avatar_url: avatarUrl,
+      tax_residency: taxResidency,
+    };
+  }
+
+  notifyAdminOfNewIdpUser({
+    sub: created.sub,
+    email: created.email,
+    name: created.name,
+    authProvider: inferIdpSignupAuthProvider(args),
+  });
+
+  return created;
 }
 
 export async function updateUserBySub(
@@ -672,6 +709,8 @@ export async function updateUserBySub(
       | "apple_id"
       | "email_verified"
       | "locale"
+      | "avatar_url"
+      | "tax_residency"
     >
   >,
 ): Promise<void> {
@@ -706,6 +745,14 @@ export async function updateUserBySub(
     if (patch.locale !== undefined) {
       values.push(patch.locale);
       sets.push(`locale = $${values.length}`);
+    }
+    if (patch.avatar_url !== undefined) {
+      values.push(patch.avatar_url);
+      sets.push(`avatar_url = $${values.length}`);
+    }
+    if (patch.tax_residency !== undefined) {
+      values.push(patch.tax_residency);
+      sets.push(`tax_residency = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(sub);
@@ -745,6 +792,14 @@ export async function updateUserBySub(
   if (patch.locale !== undefined) {
     sets.push("locale = ?");
     args.push(patch.locale);
+  }
+  if (patch.avatar_url !== undefined) {
+    sets.push("avatar_url = ?");
+    args.push(patch.avatar_url);
+  }
+  if (patch.tax_residency !== undefined) {
+    sets.push("tax_residency = ?");
+    args.push(patch.tax_residency);
   }
   if (sets.length === 0) return;
   args.push(sub);

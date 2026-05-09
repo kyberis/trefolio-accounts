@@ -26,6 +26,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ sub:
     plan: ent.plan,
     proUntil: ent.pro_until,
     source: ent.source,
+    profile: {
+      email: user.email,
+      name: user.name,
+      picture: user.avatar_url?.trim() || null,
+      taxResidency: user.tax_residency?.trim() || null,
+    },
     entitlements: {
       trefolio_pro: isPro,
       clara_daily_limit: isPro ? 200 : 30,
