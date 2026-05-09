@@ -19,8 +19,6 @@ type Interval = "monthly" | "annual";
 
 export type BillingFlash = "success" | "cancelled" | "portal_return" | null;
 
-const LANDING_SECONDS = 5;
-
 export default function UpgradeCheckout(props: {
   from: string;
   initialIsPro: boolean;
@@ -42,10 +40,7 @@ export default function UpgradeCheckout(props: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [landingPhase, setLandingPhase] = useState(showProductLanding);
-  const [countdown, setCountdown] = useState(LANDING_SECONDS);
   const intentLogged = useRef(false);
-  const timerRef = useRef<number | null>(null);
-  const checkoutStartedRef = useRef(false);
 
   const trefolio = productTargets.find((t) => t.app === "trefolio");
   const clara = productTargets.find((t) => t.app === "clara");
@@ -78,84 +73,50 @@ export default function UpgradeCheckout(props: {
     void logIntent();
   }, [landingPhase, billingFlash, logIntent]);
 
-  useEffect(() => {
-    if (!landingPhase || billingFlash) return;
-
-    const handle = window.setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          window.clearInterval(handle);
-          return 0;
-        }
-        return c - 1;
+  const startCheckout = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ interval, from }),
       });
-    }, 1000);
-    timerRef.current = handle;
-
-    return () => {
-      window.clearInterval(handle);
-      timerRef.current = null;
-    };
-  }, [landingPhase, billingFlash]);
-
-  const startCheckout = useCallback(
-    async (fromAuto?: boolean) => {
-      setError(null);
-      setLoading(true);
-      try {
-        const res = await fetch("/api/billing/checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ interval, from }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          url?: string;
-          error?: string;
-          message?: string;
-          hint?: string;
-        };
-        if (!res.ok) {
-          if (data.error === "already_pro") {
-            setError("You already have Pro — open Clara or Will to use higher limits.");
-          } else if (data.hint) {
-            setError(`${data.message || data.error || "Checkout failed"}\n\n${data.hint}`);
-          } else {
-            setError(data.message || data.error || `Request failed (${res.status})`);
-          }
-          return;
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+        message?: string;
+        hint?: string;
+      };
+      if (!res.ok) {
+        if (data.error === "already_pro") {
+          setError("You already have Pro — open Clara or Will to use higher limits.");
+        } else if (data.hint) {
+          setError(`${data.message || data.error || "Checkout failed"}\n\n${data.hint}`);
+        } else {
+          setError(data.message || data.error || `Request failed (${res.status})`);
         }
-        if (data.url) {
-          window.location.href = data.url;
-          return;
-        }
-        setError("No checkout URL returned.");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Network error");
-      } finally {
-        if (!fromAuto) setLoading(false);
+        return;
       }
-    },
-    [interval, from],
-  );
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setError("No checkout URL returned.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [interval, from]);
 
-  useEffect(() => {
-    if (!landingPhase || billingFlash) return;
-    if (countdown !== 0 || checkoutStartedRef.current) return;
-    checkoutStartedRef.current = true;
-    setLandingPhase(false);
-    void startCheckout(true);
-  }, [countdown, landingPhase, billingFlash, startCheckout]);
-
-  const skipLanding = useCallback(() => {
-    if (checkoutStartedRef.current) return;
-    const h = timerRef.current;
-    if (h != null) window.clearInterval(h);
-    timerRef.current = null;
-    checkoutStartedRef.current = true;
-    setLandingPhase(false);
-    void startCheckout(false);
-  }, [startCheckout]);
+  const continueToCheckout = useCallback(() => {
+    if (landingPhase) {
+      setLandingPhase(false);
+    }
+    void startCheckout();
+  }, [landingPhase, startCheckout]);
 
   const priceLabel = useMemo(
     () =>
@@ -186,20 +147,22 @@ export default function UpgradeCheckout(props: {
         case "trefolio":
           return (
             <>
-              Open <strong>trefolio</strong> and sign in with this account — your portfolio limits upgrade immediately.
+              Open <strong>trefolio</strong> and sign in with this account — your portfolio limits upgrade
+              immediately. Clara and Will pick up the same Pro tier with much higher per-day AI caps.
             </>
           );
         case "clara":
           return (
             <>
-              <strong>Clara</strong> — higher AI agent limits for financial workflows; sign in with the same trefolio
-              identity.
+              <strong>Clara</strong> — Pro raises your per-day agent message cap versus Free; sign in with the same
+              trefolio identity. Will and trefolio use the same subscription.
             </>
           );
         case "will":
           return (
             <>
-              <strong>Will</strong> — notes and AI quota scale with Pro; use the same login.
+              <strong>Will</strong> — Pro raises your per-day AI message cap versus Free on Telegram and the web
+              journal; use the same login. Clara and trefolio use the same subscription.
             </>
           );
       }
@@ -246,7 +209,7 @@ export default function UpgradeCheckout(props: {
           Checkout cancelled. You can subscribe anytime from this page.
         </div>
         <button type="button" className="btn-primary-lg" onClick={() => window.location.reload()}>
-          Try again
+          Subscribe again
         </button>
       </div>
     );
@@ -256,7 +219,7 @@ export default function UpgradeCheckout(props: {
     return (
       <div className={`upgrade-stack ${fromCss}`}>
         <div className="flash flash-success" role="status">
-          Your account already has Pro. Enjoy Warren, Clara, and Will with higher limits.
+          Your account already has Pro. Enjoy Warren, Clara, and Will with much higher per-day AI limits than Free.
         </div>
         <p className="fine-print">
           Manage billing from your app&apos;s subscription section or open the{" "}
@@ -266,9 +229,9 @@ export default function UpgradeCheckout(props: {
     );
   }
 
-  if (landingPhase) {
-    return (
-      <div className={`upgrade-stack ${fromCss}`}>
+  return (
+    <div className={`upgrade-stack ${fromCss}`}>
+      {landingPhase ? (
         <section className="upgrade-landing-accent" style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.15rem", marginBottom: 8 }}>{getLandingBenefitsHeading(fromApp)}</h2>
           <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "var(--text-muted, #475569)" }}>
@@ -282,57 +245,8 @@ export default function UpgradeCheckout(props: {
             ))}
           </ul>
         </section>
+      ) : null}
 
-        <div className="plan-picker">
-          <button
-            type="button"
-            className={`plan-option ${interval === "monthly" ? "plan-option-active" : ""}`}
-            onClick={() => setInterval("monthly")}
-          >
-            Monthly
-          </button>
-          <button
-            type="button"
-            className={`plan-option ${interval === "annual" ? "plan-option-active" : ""}`}
-            onClick={() => setInterval("annual")}
-          >
-            Annual
-          </button>
-        </div>
-        <p className="price-tag">{priceLabel}</p>
-
-        <div
-          style={{
-            margin: "20px 0",
-            padding: "16px",
-            borderRadius: 12,
-            border: "1px dashed var(--border, #cbd5e1)",
-            textAlign: "center",
-          }}
-        >
-          <p style={{ fontSize: "2rem", fontWeight: 700, margin: 0 }}>
-            {countdown > 0 ? countdown : "…"}
-          </p>
-          <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#64748b" }}>
-            Continuing to secure Stripe checkout{countdown > 0 ? ` in ${countdown}s` : ""}…
-          </p>
-          <button type="button" className="btn-secondary" style={{ marginTop: 12 }} onClick={skipLanding}>
-            Continue now
-          </button>
-        </div>
-
-        {loading ? <p className="fine-print">Opening Stripe…</p> : null}
-        {error ? (
-          <p className="error-text" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className={`upgrade-stack ${fromCss}`}>
       <div className="plan-picker">
         <button
           type="button"
@@ -352,12 +266,7 @@ export default function UpgradeCheckout(props: {
 
       <p className="price-tag">{priceLabel}</p>
 
-      <button
-        type="button"
-        className="btn-primary-lg"
-        disabled={loading}
-        onClick={() => void startCheckout()}
-      >
+      <button type="button" className="btn-primary-lg" disabled={loading} onClick={() => void continueToCheckout()}>
         {loading ? "Opening Stripe…" : "Continue to secure checkout"}
       </button>
 

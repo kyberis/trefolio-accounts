@@ -21,17 +21,19 @@ const BULLETS: Record<FromApp, Bullet> = {
     id: "trefolio",
     title: "trefolio",
     body:
-      "Full portfolio tracking, broker imports, AI insights, and Pro limits on the web and mobile Warren apps.",
+      "Full portfolio tracking, broker imports, and AI insights on the web and mobile Warren apps — plus the same Pro tier on Clara and Will.",
   },
   clara: {
     id: "clara",
     title: "Clara",
-    body: "Financial agents with higher daily message limits for research, automation, and chat-first workflows.",
+    body:
+      "Financial agents for research and automation with a much higher per-day AI message cap on Pro than on Free — same login as trefolio and Will.",
   },
   will: {
     id: "will",
     title: "Will",
-    body: "Notes and AI assistance with Pro-grade daily quotas across Telegram and the web journal.",
+    body:
+      "Notes and AI on Telegram and the web journal with a much higher per-day message cap on Pro than on Free — same login as trefolio and Clara.",
   },
 };
 
@@ -57,11 +59,11 @@ export function getUpgradePageTitle(): string {
 export function getUpgradePageLeadBody(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "You opened this upgrade from trefolio — one subscription unlocks Pro limits here, in Clara, and in Will.";
+      return "You opened this upgrade from trefolio — one subscription unlocks Pro here and raises per-day AI caps on Clara and Will with the same account.";
     case "clara":
-      return "You opened this upgrade from Clara — one subscription raises your agent limits and also unlocks Pro on trefolio and Will.";
+      return "You opened this upgrade from Clara — one subscription unlocks much higher per-day agent limits here, Pro on trefolio, and the same higher AI caps on Will.";
     case "will":
-      return "You opened this upgrade from Will — one subscription raises your AI quotas and also unlocks Pro on trefolio and Clara.";
+      return "You opened this upgrade from Will — one subscription unlocks much higher per-day AI limits here, Pro on trefolio, and the same higher caps on Clara.";
   }
 }
 
@@ -81,23 +83,23 @@ export function getLandingBenefitsHeading(from: FromApp): string {
 export function getLandingBenefitsSub(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "Your portfolio app is first — you still get the same Pro entitlements across the whole trefolio account.";
+      return "One checkout covers the whole bundle: Warren, Clara, and Will share Pro entitlements and higher per-day AI message caps on the assistants.";
     case "clara":
-      return "Clara is first — the same subscription covers Warren and Will with no extra checkout.";
+      return "Clara is first — the same subscription covers Warren and Will with no extra checkout, including higher per-day AI caps on both assistants.";
     case "will":
-      return "Will is first — the same subscription covers Warren and Clara with no extra checkout.";
+      return "Will is first — the same subscription covers Warren and Clara with no extra checkout, including higher per-day AI caps on both assistants.";
   }
 }
 
-/** Footnote under the manual checkout CTA (non-countdown view). */
+/** Footnote under the checkout CTA. */
 export function getCheckoutFootnote(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. Clara and Will pick up Pro automatically.";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. Clara and Will pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
     case "clara":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Will pick up Pro automatically.";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Will pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
     case "will":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Clara pick up Pro automatically.";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Clara pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
   }
 }
 
