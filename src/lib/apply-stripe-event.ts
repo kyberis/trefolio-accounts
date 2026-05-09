@@ -8,7 +8,8 @@ import { getIdpStripe } from "@/lib/idp-stripe";
 
 function readMetadataSub(session: Stripe.Checkout.Session): string | null {
   const m = session.metadata ?? {};
-  const sub = (m.sub || m.idp_sub || m.userId || "").trim();
+  /** Only canonical IdP `sub` — never treat product-local `userId` as `sub`. */
+  const sub = (m.sub || m.idp_sub || "").trim();
   return sub || null;
 }
 
