@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 
 import { Brand, PageFooter, AppIcon } from "@/components/Brand";
 import OpsTelegramConnectPanel from "@/components/OpsTelegramConnectPanel";
 import { getIdpAdmin, hasAdminConfigured } from "@/lib/admin";
 import { hasOpsTelegramLinkForSub } from "@/lib/db";
+import { getProductTargets } from "@/lib/product-links";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,22 @@ export const metadata = {
  */
 export default async function AgentsPage() {
   if (!hasAdminConfigured()) {
-    redirect("/admin/users");
+    return (
+      <div className="page-shell">
+        <main className="page-main" style={{ flexDirection: "column", gap: 16, padding: 24 }}>
+          <div className="card card-narrow">
+            <h1 style={{ fontSize: 20, marginBottom: 8 }}>Admin not configured</h1>
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+              Set <code>IDP_ADMIN_EMAILS</code> on this service, deploy, then return here.
+            </p>
+            <Link href="/admin/users" className="btn-mini" style={{ textDecoration: "none", marginTop: 12, display: "inline-block" }}>
+              Admin setup →
+            </Link>
+          </div>
+        </main>
+        <PageFooter />
+      </div>
+    );
   }
 
   const ctx = await getIdpAdmin();
@@ -51,7 +66,55 @@ export default async function AgentsPage() {
         </div>
       );
     }
-    redirect(`/?next=${encodeURIComponent("/agents")}`);
+
+    const trefolioBase =
+      getProductTargets().find((p) => p.app === "trefolio")?.baseUrl ?? "https://trefolio.com";
+    const trefolioSignIn = `${trefolioBase}/login`;
+
+    return (
+      <div className="page-shell">
+        <header className="admin-topbar">
+          <Link href="/admin/users" className="admin-brand">
+            <AppIcon app="trefolio" size={28} />
+            <span className="brand-name">trefolio</span>
+            <span className="admin-tag">admin</span>
+          </Link>
+          <nav className="admin-nav">
+            <Link href="/admin/users">Users</Link>
+            <Link href="/agents">Agents</Link>
+            <Link href="/account/passkeys">Passkeys</Link>
+          </nav>
+        </header>
+        <main className="admin-main">
+          <div className="card card-wide">
+            <h1 style={{ fontSize: 22, marginBottom: 10 }}>Sign in to continue</h1>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
+              <strong>/agents</strong> needs an IdP session cookie (<code>idp_session</code>) on{" "}
+              <strong>this domain</strong>. Next.js used to answer with <strong>307</strong> to the home page —
+              that was only a redirect, not an error. If you are signed in to products but not here, complete
+              sign-in once through an app that uses this identity service; that sets the cookie when you approve
+              login on <code>user.trefolio.com</code>.
+            </p>
+            <ol style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+              <li>
+                Open <Link href={trefolioSignIn}>{trefolioSignIn}</Link> (or Clara / Will) and sign in so you hit
+                the IdP approve screen on this host.
+              </li>
+              <li>Return here and reload — or open <strong>Admin → Users</strong> first, then <strong>Agents</strong>.</li>
+            </ol>
+            <a className="btn-primary" href={trefolioSignIn} style={{ display: "inline-block", textDecoration: "none" }}>
+              Sign in via trefolio
+            </a>
+            <p style={{ marginTop: 20, fontSize: 14 }}>
+              <Link href="/admin/users" style={{ color: "var(--emerald-strong)" }}>
+                ← Admin: Users
+              </Link>
+            </p>
+          </div>
+        </main>
+        <PageFooter />
+      </div>
+    );
   }
 
   const opsLinked = await hasOpsTelegramLinkForSub(ctx.user.sub);
