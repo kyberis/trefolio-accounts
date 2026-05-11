@@ -22,6 +22,10 @@ import {
  *
  * The same handler is exposed as both GET and POST per OIDC RP-Initiated
  * Logout 1.0.
+ *
+ * **Do not** link here with Next.js `<Link prefetch>` — production prefetch can
+ * issue a background GET and clear `idp_session` before the user clicks "Sign out".
+ * Use a plain `<a href="...">` (no prefetch) for in-app sign-out links.
  */
 export const dynamic = "force-dynamic";
 

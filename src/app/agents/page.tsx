@@ -201,9 +201,9 @@ export default async function AgentsPage() {
         </nav>
         <div className="admin-actor" title={`Signed in as ${op.user.email}`}>
           <span className="admin-actor-email">{op.user.email}</span>
-          <Link href="/api/oauth2/end_session" className="btn-mini">
+          <a href="/api/oauth2/end_session" className="btn-mini">
             Sign out
-          </Link>
+          </a>
         </div>
       </header>
 

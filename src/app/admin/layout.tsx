@@ -58,9 +58,9 @@ export default async function AdminLayout({
         </nav>
         <div className="admin-actor" title={`Signed in as ${ctx.user.email}`}>
           <span className="admin-actor-email">{ctx.user.email}</span>
-          <Link href="/api/oauth2/end_session" className="btn-mini">
+          <a href="/api/oauth2/end_session" className="btn-mini">
             Sign out
-          </Link>
+          </a>
         </div>
       </header>
       <main className="admin-main">{children}</main>
