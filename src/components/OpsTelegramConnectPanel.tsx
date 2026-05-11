@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 /**
@@ -11,6 +12,7 @@ export default function OpsTelegramConnectPanel({
 }: {
   initialLinked: boolean;
 }) {
+  const router = useRouter();
   const [linked, setLinked] = useState(initialLinked);
   const [opsDeepLink, setOpsDeepLink] = useState("");
   const [opsMsg, setOpsMsg] = useState("");
@@ -19,18 +21,6 @@ export default function OpsTelegramConnectPanel({
   useEffect(() => {
     setLinked(initialLinked);
   }, [initialLinked]);
-
-  async function refreshLinkedFromProfile() {
-    try {
-      const res = await fetch("/api/account/profile", { credentials: "include" });
-      const data = await res.json();
-      if (res.ok && typeof data.ops_telegram_linked === "boolean") {
-        setLinked(data.ops_telegram_linked);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
 
   return (
     <>
@@ -93,7 +83,7 @@ export default function OpsTelegramConnectPanel({
                 if (!res.ok) throw new Error(data.error || "disconnect_failed");
                 setOpsMsg("Telegram disconnected.");
                 setLinked(false);
-                await refreshLinkedFromProfile();
+                router.refresh();
               } catch (e) {
                 setOpsErr(e instanceof Error ? e.message : "Disconnect failed.");
               }

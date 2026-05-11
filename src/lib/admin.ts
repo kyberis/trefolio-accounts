@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
 import { findUserBySub, type DbUser } from "./db";
-import { IDP_SESSION_COOKIE, verifySession } from "./session";
+import { IDP_IMPERSONATOR_COOKIE, IDP_SESSION_COOKIE, verifySession } from "./session";
 
 /**
  * IdP-side admin guard.
@@ -48,6 +48,25 @@ export async function getIdpAdmin(): Promise<IdpAdminContext | null> {
   if (!user) return null;
   if (!isAdminEmail(user.email)) return null;
   return { user };
+}
+
+/**
+ * Operator UI context for /agents: normal admin session, or real operator while
+ * impersonating (session cookie holds the victim).
+ */
+export async function getIdpOperatorUiContext(): Promise<{
+  user: DbUser;
+  impersonating: boolean;
+} | null> {
+  const adminCtx = await getIdpAdmin();
+  if (adminCtx) return { user: adminCtx.user, impersonating: false };
+
+  const store = await cookies();
+  const impSub = verifySession(store.get(IDP_IMPERSONATOR_COOKIE)?.value);
+  if (!impSub) return null;
+  const operator = await findUserBySub(impSub);
+  if (!operator || !isAdminEmail(operator.email)) return null;
+  return { user: operator, impersonating: true };
 }
 
 /**

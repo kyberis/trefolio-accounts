@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { Brand, PageFooter, AppIcon } from "@/components/Brand";
 import OpsTelegramConnectPanel from "@/components/OpsTelegramConnectPanel";
-import { getIdpAdmin, hasAdminConfigured } from "@/lib/admin";
+import { getIdpOperatorUiContext, hasAdminConfigured } from "@/lib/admin";
 import { hasOpsTelegramLinkForSub } from "@/lib/db";
 import { getProductTargets } from "@/lib/product-links";
+import { getPublicIssuer } from "@/lib/public-url";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,8 @@ export const metadata = {
 };
 
 /**
- * Operators only (`IDP_ADMIN_EMAILS`). Uses the same `idp_session` cookie as /admin.
- * Product Telegram bots (Warren / etc.) stay in each app; this page is only the ops bot.
+ * Operators only (`IDP_ADMIN_EMAILS`), including while impersonating (real operator
+ * from `idp_impersonator`). Needs `idp_session` on this exact host (see middleware).
  */
 export default async function AgentsPage() {
   if (!hasAdminConfigured()) {
@@ -39,10 +40,21 @@ export default async function AgentsPage() {
     );
   }
 
-  const ctx = await getIdpAdmin();
-  if (!ctx) {
+  const op = await getIdpOperatorUiContext();
+  if (!op) {
     const jar = await cookies();
-    const sub = verifySession(jar.get(IDP_SESSION_COOKIE)?.value);
+    const hdrs = await headers();
+    const host =
+      hdrs.get("x-forwarded-host")?.split(",")[0]?.trim() || hdrs.get("host") || "";
+    let canonicalHost = "";
+    try {
+      canonicalHost = new URL(getPublicIssuer()).host;
+    } catch {
+      canonicalHost = "";
+    }
+    const rawSession = jar.get(IDP_SESSION_COOKIE)?.value;
+    const sub = verifySession(rawSession);
+    const sessionRejected = Boolean(rawSession && !sub);
     if (sub) {
       return (
         <div className="page-shell">
@@ -88,12 +100,25 @@ export default async function AgentsPage() {
         <main className="admin-main">
           <div className="card card-wide">
             <h1 style={{ fontSize: 22, marginBottom: 10 }}>Sign in to continue</h1>
+            {sessionRejected ? (
+              <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 14 }}>
+                Your browser sent an <code>idp_session</code> cookie, but this server could not verify it.
+                This usually happens after <strong>IDP_SESSION_SECRET</strong> was rotated, or the cookie was
+                copied from another environment. Clear site data for{" "}
+                <strong>{host || "this host"}</strong> and sign in again from trefolio (or the IdP login screen).
+              </div>
+            ) : null}
+            {canonicalHost && host && host !== canonicalHost ? (
+              <div className="alert alert-warning" style={{ marginBottom: 16, fontSize: 14 }}>
+                You are on <code>{host}</code> but this deployment&apos;s issuer is <code>{canonicalHost}</code>.
+                Session cookies are not shared between hostnames — use the same URL you used when you approved
+                login (avoid mixing <code>www.</code> and apex).
+              </div>
+            ) : null}
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
-              <strong>/agents</strong> needs an IdP session cookie (<code>idp_session</code>) on{" "}
-              <strong>this domain</strong>. Next.js used to answer with <strong>307</strong> to the home page —
-              that was only a redirect, not an error. If you are signed in to products but not here, complete
-              sign-in once through an app that uses this identity service; that sets the cookie when you approve
-              login on <code>user.trefolio.com</code>.
+              <strong>/agents</strong> needs a valid <code>idp_session</code> cookie on <strong>this host</strong>.
+              Approving login on <code>user.trefolio.com</code> (password, Google, or passkey) sets that cookie
+              before you are redirected back to trefolio.
             </p>
             <ol style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
               <li>
@@ -117,7 +142,7 @@ export default async function AgentsPage() {
     );
   }
 
-  const opsLinked = await hasOpsTelegramLinkForSub(ctx.user.sub);
+  const opsLinked = await hasOpsTelegramLinkForSub(op.user.sub);
 
   return (
     <div className="page-shell">
@@ -132,8 +157,8 @@ export default async function AgentsPage() {
           <Link href="/agents">Agents</Link>
           <Link href="/account/passkeys">Passkeys</Link>
         </nav>
-        <div className="admin-actor" title={`Signed in as ${ctx.user.email}`}>
-          <span className="admin-actor-email">{ctx.user.email}</span>
+        <div className="admin-actor" title={`Signed in as ${op.user.email}`}>
+          <span className="admin-actor-email">{op.user.email}</span>
           <Link href="/api/oauth2/end_session" className="btn-mini">
             Sign out
           </Link>
@@ -142,6 +167,12 @@ export default async function AgentsPage() {
 
       <main className="admin-main">
         <div className="card card-wide">
+          {op.impersonating ? (
+            <div className="alert alert-warning" style={{ marginBottom: 16, fontSize: 14 }}>
+              You are <strong>impersonating</strong> another user. Business ops Telegram actions on this page
+              apply to <strong>your operator account</strong> ({op.user.email}), not the impersonated profile.
+            </div>
+          ) : null}
           <div style={{ textAlign: "center", marginBottom: 20 }}>
             <Brand href="https://trefolio.com" />
           </div>
