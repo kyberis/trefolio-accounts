@@ -53,7 +53,7 @@ export default async function AdminLayout({
         </Link>
         <nav className="admin-nav">
           <Link href="/admin/users">Users</Link>
-          <Link href="/account#telegram-agents">Agents</Link>
+          <Link href="/agents">Agents</Link>
           <Link href="/account/passkeys">Passkeys</Link>
         </nav>
         <div className="admin-actor" title={`Signed in as ${ctx.user.email}`}>

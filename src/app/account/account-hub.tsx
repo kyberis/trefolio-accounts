@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Brand, PageFooter, AppIcon } from "@/components/Brand";
+import OpsTelegramConnectPanel from "@/components/OpsTelegramConnectPanel";
 
 type FromApp = "trefolio" | "clara" | "will";
 
@@ -118,10 +119,6 @@ export default function AccountHub({
   const [confirmPwd, setConfirmPwd] = useState("");
   const [pwdMsg, setPwdMsg] = useState("");
   const [pwdErr, setPwdErr] = useState("");
-
-  const [opsDeepLink, setOpsDeepLink] = useState("");
-  const [opsMsg, setOpsMsg] = useState("");
-  const [opsErr, setOpsErr] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -380,77 +377,7 @@ export default function AccountHub({
                 <h3 style={{ fontSize: 16, margin: "0 0 8px" }}>{agent.title}</h3>
                 <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 10px" }}>{agent.description}</p>
                 {agent.staff_only && agent.id === "ops" ? (
-                  <>
-                    <p style={{ fontSize: 14, marginBottom: 8 }}>
-                      Status:{" "}
-                      <strong>{profile.ops_telegram_linked ? "Telegram linked" : "Not linked"}</strong>
-                    </p>
-                    {opsErr ? (
-                      <p style={{ color: "#f87171", fontSize: 13, marginBottom: 8 }} role="alert">
-                        {opsErr}
-                      </p>
-                    ) : null}
-                    {opsMsg ? (
-                      <p style={{ color: "#34d399", fontSize: 13, marginBottom: 8 }} aria-live="polite">
-                        {opsMsg}
-                      </p>
-                    ) : null}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={async () => {
-                          setOpsErr("");
-                          setOpsMsg("");
-                          setOpsDeepLink("");
-                          try {
-                            const res = await fetch("/api/account/ops-telegram/code", {
-                              method: "POST",
-                              credentials: "include",
-                            });
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data.error || "link_failed");
-                            const link = String(data.deep_link || "");
-                            setOpsDeepLink(link);
-                            setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
-                          } catch (e) {
-                            setOpsErr(e instanceof Error ? e.message : "Could not create link.");
-                          }
-                        }}
-                      >
-                        Generate Telegram link
-                      </button>
-                      {opsDeepLink ? (
-                        <a href={opsDeepLink} className="btn-mini" style={{ textDecoration: "none" }} rel="noreferrer">
-                          Open in Telegram →
-                        </a>
-                      ) : null}
-                      {profile.ops_telegram_linked ? (
-                        <button
-                          type="button"
-                          className="btn-mini"
-                          onClick={async () => {
-                            setOpsErr("");
-                            setOpsMsg("");
-                            try {
-                              const res = await fetch("/api/account/ops-telegram/disconnect", {
-                                method: "POST",
-                                credentials: "include",
-                              });
-                              const data = await res.json();
-                              if (!res.ok) throw new Error(data.error || "disconnect_failed");
-                              setOpsMsg("Telegram disconnected.");
-                              await load();
-                            } catch (e) {
-                              setOpsErr(e instanceof Error ? e.message : "Disconnect failed.");
-                            }
-                          }}
-                        >
-                          Disconnect Telegram
-                        </button>
-                      ) : null}
-                    </div>
-                  </>
+                  <OpsTelegramConnectPanel initialLinked={profile.ops_telegram_linked} />
                 ) : (
                   <>
                     <p style={{ fontSize: 14, marginBottom: 10 }}>
