@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 
 import { getWebAuthnConfig } from "@/lib/webauthn";
@@ -18,7 +17,6 @@ const CHALLENGE_COOKIE = "idp_passkey_login_challenge";
  * cannot be replayed across other tools by accident.
  */
 export async function POST() {
-  const store = await cookies();
   const { rpID } = getWebAuthnConfig();
   const options = await generateAuthenticationOptions({
     rpID,
@@ -26,12 +24,13 @@ export async function POST() {
     allowCredentials: [],
   });
 
-  store.set(CHALLENGE_COOKIE, options.challenge, {
+  const res = NextResponse.json(options);
+  res.cookies.set(CHALLENGE_COOKIE, options.challenge, {
     httpOnly: true,
     sameSite: "strict",
     path: "/",
     maxAge: 60 * 5,
     secure: process.env.NODE_ENV === "production",
   });
-  return NextResponse.json(options);
+  return res;
 }

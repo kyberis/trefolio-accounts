@@ -146,6 +146,13 @@ export default async function AgentsPage() {
               </li>
               <li>Reload this page when done.</li>
             </ol>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
+              Still no <code>idp_session</code> under Application → Cookies? In Network, open the{" "}
+              <code>/api/auth/google/callback</code> (or passkey <code>login-verify</code>) response and confirm{" "}
+              <strong>Set-Cookie</strong> for <code>idp_session</code>. If the header is absent, strict privacy
+              tools or a misconfigured proxy may be stripping cookies — try another browser profile or disable
+              blocking for this site.
+            </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
               <a
                 className="btn-primary"

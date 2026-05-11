@@ -12,7 +12,6 @@ import {
 } from "@/lib/db";
 import { findClient, newAuthCode } from "@/lib/oidc";
 import {
-  IDP_SESSION_COOKIE,
   sessionCookieAttributes,
   signSession,
 } from "@/lib/session";
@@ -111,16 +110,23 @@ export async function POST(req: NextRequest) {
 
   void recordIdpAuthAttemptSuccess(user.sub).catch(() => {});
 
-  // Issue the IdP session cookie *before* minting an OIDC code so the
-  // user lands on their destination already signed in.
   const sessionAttrs = sessionCookieAttributes();
-  store.set(sessionAttrs.name, signSession(user.sub), {
+  const sessionPayload = signSession(user.sub);
+  const cookieOpts = {
     httpOnly: sessionAttrs.httpOnly,
     sameSite: sessionAttrs.sameSite,
     path: sessionAttrs.path,
     maxAge: sessionAttrs.maxAge,
     secure: sessionAttrs.secure,
-  });
+  } as const;
+
+  function withIdpSession<T extends object>(payload: T, status = 200): NextResponse {
+    const res = NextResponse.json(payload, { status });
+    // Route handlers must attach Set-Cookie on the Response; `cookies().set` + JSON
+    // responses are not reliably serialized on some serverless runtimes (no idp_session).
+    res.cookies.set(sessionAttrs.name, sessionPayload, { ...cookieOpts });
+    return res;
+  }
 
   // OIDC continuation branch.
   if (body.oidc?.client_id && body.oidc.redirect_uri) {
@@ -141,8 +147,8 @@ export async function POST(req: NextRequest) {
     const cb = new URL(body.oidc.redirect_uri);
     cb.searchParams.set("code", oidcCode);
     if (body.oidc.state) cb.searchParams.set("state", body.oidc.state);
-    return NextResponse.json({ ok: true, redirectTo: cb.toString() });
+    return withIdpSession({ ok: true as const, redirectTo: cb.toString() });
   }
 
-  return NextResponse.json({ ok: true, sub: user.sub });
+  return withIdpSession({ ok: true as const, sub: user.sub });
 }
