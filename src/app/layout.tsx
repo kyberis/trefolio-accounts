@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import "./globals.css";
 
+import { BfCacheRouterRefresh } from "@/components/BfCacheRouterRefresh";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { getPublicIssuer } from "@/lib/public-url";
 
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="app-body">
+        <BfCacheRouterRefresh />
         <ImpersonationBanner />
         {children}
       </body>

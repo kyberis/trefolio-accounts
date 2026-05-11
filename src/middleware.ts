@@ -16,7 +16,19 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
-  return NextResponse.next();
+  const res = NextResponse.next();
+  const p = req.nextUrl.pathname;
+  if (
+    p.startsWith("/agents") ||
+    p.startsWith("/account") ||
+    p.startsWith("/admin") ||
+    p.startsWith("/api/account") ||
+    p.startsWith("/sign-in") ||
+    p.startsWith("/oauth2/")
+  ) {
+    res.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+  }
+  return res;
 }
 
 export const config = {

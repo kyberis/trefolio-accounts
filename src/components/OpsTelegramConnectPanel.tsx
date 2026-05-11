@@ -7,6 +7,18 @@ import { useEffect, useState } from "react";
  * Business ops Telegram linking (staff / env-admins). Uses session cookie +
  * POST /api/account/ops-telegram/* (requires platform staff).
  */
+
+function opsTelegramApiErrorMessage(data: { reason?: string; error?: string }): string {
+  if (data.reason === "missing_or_invalid_session") {
+    return (
+      "Your browser did not send an idp_session cookie on this request. Reload the page, sign in again on " +
+      "this host (e.g. Continue with Google on /agents), then retry. " +
+      "In DevTools → Application → Cookies for user.trefolio.com you should see idp_session after sign-in."
+    );
+  }
+  return data.reason || data.error || "Request failed";
+}
+
 export default function OpsTelegramConnectPanel({
   initialLinked,
 }: {
@@ -51,7 +63,7 @@ export default function OpsTelegramConnectPanel({
                 credentials: "include",
               });
               const data = await res.json();
-              if (!res.ok) throw new Error(data.reason || data.error || "link_failed");
+              if (!res.ok) throw new Error(opsTelegramApiErrorMessage(data));
               const link = String(data.deep_link || "");
               setOpsDeepLink(link);
               setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
@@ -80,7 +92,7 @@ export default function OpsTelegramConnectPanel({
                   credentials: "include",
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.reason || data.error || "disconnect_failed");
+                if (!res.ok) throw new Error(opsTelegramApiErrorMessage(data));
                 setOpsMsg("Telegram disconnected.");
                 setLinked(false);
                 router.refresh();
