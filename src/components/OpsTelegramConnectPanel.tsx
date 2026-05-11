@@ -51,7 +51,7 @@ export default function OpsTelegramConnectPanel({
                 credentials: "include",
               });
               const data = await res.json();
-              if (!res.ok) throw new Error(data.error || "link_failed");
+              if (!res.ok) throw new Error(data.reason || data.error || "link_failed");
               const link = String(data.deep_link || "");
               setOpsDeepLink(link);
               setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
@@ -80,7 +80,7 @@ export default function OpsTelegramConnectPanel({
                   credentials: "include",
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "disconnect_failed");
+                if (!res.ok) throw new Error(data.reason || data.error || "disconnect_failed");
                 setOpsMsg("Telegram disconnected.");
                 setLinked(false);
                 router.refresh();

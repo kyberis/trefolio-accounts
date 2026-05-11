@@ -1,3 +1,4 @@
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { findUserBySub, mintOpsTelegramLinkCode } from "@/lib/db";
@@ -6,9 +7,25 @@ import { isPlatformStaff } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
-  const sub = await resolveOpsTelegramOwnerSub();
-  if (!sub) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+/** Browsers open bare API URLs with GET; this route only accepts POST from the UI. */
+export async function GET() {
+  return NextResponse.json(
+    {
+      error: "method_not_allowed",
+      hint: "Use POST from /account or /agents (Generate Telegram link). Opening this URL in a tab does not send session cookies.",
+    },
+    { status: 405 },
+  );
+}
+
+export async function POST(req: NextRequest) {
+  const sub = await resolveOpsTelegramOwnerSub(req);
+  if (!sub) {
+    return NextResponse.json(
+      { error: "unauthorized", reason: "missing_or_invalid_session" },
+      { status: 401 },
+    );
+  }
   const user = await findUserBySub(sub);
   if (!user || !isPlatformStaff(user)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
