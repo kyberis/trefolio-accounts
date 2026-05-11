@@ -117,19 +117,34 @@ export default async function AgentsPage() {
             ) : null}
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
               <strong>/agents</strong> needs a valid <code>idp_session</code> cookie on <strong>this host</strong>.
-              Approving login on <code>user.trefolio.com</code> (password, Google, or passkey) sets that cookie
-              before you are redirected back to trefolio.
+              Use password sign-in below, or complete the IdP approve screen after opening trefolio (Google / passkey).
             </p>
             <ol style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+              <li>
+                <strong>Password on file?</strong> Use{" "}
+                <Link href="/sign-in?next=/agents" style={{ color: "var(--emerald-strong)" }}>
+                  sign in on this host
+                </Link>{" "}
+                — it sets <code>idp_session</code> without a trefolio redirect.
+              </li>
               <li>
                 Open <Link href={trefolioSignIn}>{trefolioSignIn}</Link> (or Clara / Will) and sign in so you hit
                 the IdP approve screen on this host.
               </li>
               <li>Return here and reload — or open <strong>Admin → Users</strong> first, then <strong>Agents</strong>.</li>
             </ol>
-            <a className="btn-primary" href={trefolioSignIn} style={{ display: "inline-block", textDecoration: "none" }}>
-              Sign in via trefolio
-            </a>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+              <Link
+                href="/sign-in?next=/agents"
+                className="btn-secondary"
+                style={{ display: "inline-block", textDecoration: "none" }}
+              >
+                Sign in with password (this host)
+              </Link>
+              <a className="btn-primary" href={trefolioSignIn} style={{ display: "inline-block", textDecoration: "none" }}>
+                Sign in via trefolio
+              </a>
+            </div>
             <p style={{ marginTop: 20, fontSize: 14 }}>
               <Link href="/admin/users" style={{ color: "var(--emerald-strong)" }}>
                 ← Admin: Users
