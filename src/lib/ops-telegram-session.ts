@@ -54,17 +54,19 @@ export async function resolveOpsTelegramOwnerSub(req?: NextRequest): Promise<str
   const headerStore = await cookies();
   const rawCookieHeader = req?.headers.get("cookie") ?? (await headers()).get("cookie");
 
+  const sessionSub = verifySession(
+    pickCookieValue(req, headerStore, IDP_SESSION_COOKIE, rawCookieHeader),
+  );
   const imp = verifySession(
     pickCookieValue(req, headerStore, IDP_IMPERSONATOR_COOKIE, rawCookieHeader),
   );
+
   if (imp) {
+    if (!sessionSub) return null;
     const admin = await findUserBySub(imp);
     if (admin && isAdminEmail(admin.email)) return admin.sub;
     if (admin && !isAdminEmail(admin.email)) return null;
-    // Valid-looking impersonator cookie but user row missing — fall through to session.
   }
 
-  return (
-    verifySession(pickCookieValue(req, headerStore, IDP_SESSION_COOKIE, rawCookieHeader)) || null
-  );
+  return sessionSub || null;
 }

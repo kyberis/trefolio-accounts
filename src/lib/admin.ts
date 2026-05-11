@@ -62,8 +62,13 @@ export async function getIdpOperatorUiContext(): Promise<{
   if (adminCtx) return { user: adminCtx.user, impersonating: false };
 
   const store = await cookies();
+  const sessionSub = verifySession(store.get(IDP_SESSION_COOKIE)?.value);
   const impSub = verifySession(store.get(IDP_IMPERSONATOR_COOKIE)?.value);
   if (!impSub) return null;
+  // Impersonation always pairs a valid victim `idp_session` with `idp_impersonator`.
+  // Without both, drop through so we do not show operator chrome while APIs 401.
+  if (!sessionSub) return null;
+
   const operator = await findUserBySub(impSub);
   if (!operator || !isAdminEmail(operator.email)) return null;
   return { user: operator, impersonating: true };
