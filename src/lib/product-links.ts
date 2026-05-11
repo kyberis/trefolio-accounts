@@ -52,7 +52,7 @@ export interface ProductTarget {
 export function getProductTargets(): ProductTarget[] {
   const trefolio =
     trim(process.env.TREFOLIO_BASE_URL) ||
-    (isProd ? "https://trefolio.com" : "http://localhost:3000");
+    (isProd ? "https://trefolio.com" : "http://localhost:3010");
   const clara =
     trim(process.env.CLARA_BASE_URL) ||
     (isProd ? "https://clara.trefolio.com" : "http://localhost:3001");
@@ -173,4 +173,47 @@ export async function probeProductLinks(args: {
   });
 
   return Promise.all(calls);
+}
+
+const TELEGRAM_LINK_STATUS_TIMEOUT_MS = 2000;
+
+/**
+ * Warren (trefolio) Telegram integration status for an IdP subject — used on `/account`.
+ */
+export async function fetchTrefolioTelegramLinkStatus(sub: string): Promise<{
+  linked: boolean | null;
+  hasAccount: boolean | null;
+}> {
+  const token = process.env.IDP_SERVICE_TOKEN?.trim();
+  if (!token) return { linked: null, hasAccount: null };
+
+  const target = getProductTargets().find((t) => t.app === "trefolio");
+  if (!target) return { linked: null, hasAccount: null };
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TELEGRAM_LINK_STATUS_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `${target.baseUrl}/api/internal/telegram-link-status?sub=${encodeURIComponent(sub)}`,
+      {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...vercelProtectionBypassHeader("trefolio"),
+        },
+        cache: "no-store",
+        signal: ctrl.signal,
+      },
+    );
+    if (!res.ok) return { linked: null, hasAccount: null };
+    const json = (await res.json()) as { linked?: unknown; hasAccount?: unknown };
+    return {
+      linked: typeof json.linked === "boolean" ? json.linked : null,
+      hasAccount: typeof json.hasAccount === "boolean" ? json.hasAccount : null,
+    };
+  } catch {
+    return { linked: null, hasAccount: null };
+  } finally {
+    clearTimeout(timer);
+  }
 }

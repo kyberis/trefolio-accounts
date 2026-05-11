@@ -20,6 +20,16 @@ function backLabel(from: FromApp | undefined): string {
   return "Back to trefolio";
 }
 
+type TelegramAgentRow = {
+  id: string;
+  title: string;
+  description: string;
+  linked: boolean | null;
+  has_product_account: boolean | null;
+  connect_url: string;
+  staff_only?: boolean;
+};
+
 type ProfilePayload = {
   sub: string;
   email: string;
@@ -32,6 +42,7 @@ type ProfilePayload = {
   has_password: boolean;
   is_platform_staff: boolean;
   ops_telegram_linked: boolean;
+  telegram_agents?: TelegramAgentRow[];
 };
 
 export default function AccountHub({
@@ -67,7 +78,11 @@ export default function AccountHub({
       const res = await fetch("/api/account/profile", { credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "load_failed");
-      setProfile(data as ProfilePayload);
+      const payload = data as ProfilePayload;
+      if (!Array.isArray(payload.telegram_agents)) {
+        payload.telegram_agents = [];
+      }
+      setProfile(payload);
       setName(data.name || "");
       setAvatarUrl(data.avatar_url || "");
       setTaxResidency(data.tax_residency || "");
@@ -292,84 +307,129 @@ export default function AccountHub({
             ) : null}
           </section>
 
-          {profile.is_platform_staff ? (
-            <section style={{ marginTop: 36 }}>
-              <h2 style={{ fontSize: 18, marginBottom: 8 }}>Business notifications (Telegram)</h2>
-              <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 12 }}>
-                For platform staff only. Receive IdP signups, billing alerts, and daily metrics summaries.
-                Uses a separate bot from product (Warren / Clara / Will) linking.
-              </p>
-              <p style={{ fontSize: 14, marginBottom: 8 }}>
-                Status:{" "}
-                <strong>{profile.ops_telegram_linked ? "Telegram linked" : "Not linked"}</strong>
-              </p>
-              {opsErr ? (
-                <p style={{ color: "#f87171", fontSize: 13, marginBottom: 8 }} role="alert">
-                  {opsErr}
-                </p>
-              ) : null}
-              {opsMsg ? (
-                <p style={{ color: "#34d399", fontSize: 13, marginBottom: 8 }} aria-live="polite">
-                  {opsMsg}
-                </p>
-              ) : null}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={async () => {
-                    setOpsErr("");
-                    setOpsMsg("");
-                    setOpsDeepLink("");
-                    try {
-                      const res = await fetch("/api/account/ops-telegram/code", {
-                        method: "POST",
-                        credentials: "include",
-                      });
-                      const data = await res.json();
-                      if (!res.ok) throw new Error(data.error || "link_failed");
-                      const link = String(data.deep_link || "");
-                      setOpsDeepLink(link);
-                      setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
-                    } catch (e) {
-                      setOpsErr(e instanceof Error ? e.message : "Could not create link.");
-                    }
-                  }}
-                >
-                  Generate Telegram link
-                </button>
-                {opsDeepLink ? (
-                  <a href={opsDeepLink} className="btn-mini" style={{ textDecoration: "none" }} rel="noreferrer">
-                    Open in Telegram →
-                  </a>
-                ) : null}
-                {profile.ops_telegram_linked ? (
-                  <button
-                    type="button"
-                    className="btn-mini"
-                    onClick={async () => {
-                      setOpsErr("");
-                      setOpsMsg("");
-                      try {
-                        const res = await fetch("/api/account/ops-telegram/disconnect", {
-                          method: "POST",
-                          credentials: "include",
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || "disconnect_failed");
-                        setOpsMsg("Telegram disconnected.");
-                        await load();
-                      } catch (e) {
-                        setOpsErr(e instanceof Error ? e.message : "Disconnect failed.");
-                      }
-                    }}
-                  >
-                    Disconnect Telegram
-                  </button>
-                ) : null}
+          <section style={{ marginTop: 36 }}>
+            <h2 style={{ fontSize: 18, marginBottom: 8 }}>Telegram agents</h2>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
+              Bots are per product. We show link status when the app reports it; otherwise open the product to
+              connect Telegram while signed in.
+            </p>
+            {(profile.telegram_agents ?? []).map((agent) => (
+              <div
+                key={agent.id}
+                style={{
+                  marginBottom: 20,
+                  padding: 16,
+                  borderRadius: 10,
+                  border: "1px solid var(--border-subtle, rgba(255,255,255,0.12))",
+                  background: "var(--surface-elevated, rgba(255,255,255,0.03))",
+                }}
+              >
+                <h3 style={{ fontSize: 16, margin: "0 0 8px" }}>{agent.title}</h3>
+                <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 10px" }}>{agent.description}</p>
+                {agent.staff_only && agent.id === "ops" ? (
+                  <>
+                    <p style={{ fontSize: 14, marginBottom: 8 }}>
+                      Status:{" "}
+                      <strong>{profile.ops_telegram_linked ? "Telegram linked" : "Not linked"}</strong>
+                    </p>
+                    {opsErr ? (
+                      <p style={{ color: "#f87171", fontSize: 13, marginBottom: 8 }} role="alert">
+                        {opsErr}
+                      </p>
+                    ) : null}
+                    {opsMsg ? (
+                      <p style={{ color: "#34d399", fontSize: 13, marginBottom: 8 }} aria-live="polite">
+                        {opsMsg}
+                      </p>
+                    ) : null}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={async () => {
+                          setOpsErr("");
+                          setOpsMsg("");
+                          setOpsDeepLink("");
+                          try {
+                            const res = await fetch("/api/account/ops-telegram/code", {
+                              method: "POST",
+                              credentials: "include",
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error || "link_failed");
+                            const link = String(data.deep_link || "");
+                            setOpsDeepLink(link);
+                            setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
+                          } catch (e) {
+                            setOpsErr(e instanceof Error ? e.message : "Could not create link.");
+                          }
+                        }}
+                      >
+                        Generate Telegram link
+                      </button>
+                      {opsDeepLink ? (
+                        <a href={opsDeepLink} className="btn-mini" style={{ textDecoration: "none" }} rel="noreferrer">
+                          Open in Telegram →
+                        </a>
+                      ) : null}
+                      {profile.ops_telegram_linked ? (
+                        <button
+                          type="button"
+                          className="btn-mini"
+                          onClick={async () => {
+                            setOpsErr("");
+                            setOpsMsg("");
+                            try {
+                              const res = await fetch("/api/account/ops-telegram/disconnect", {
+                                method: "POST",
+                                credentials: "include",
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error || "disconnect_failed");
+                              setOpsMsg("Telegram disconnected.");
+                              await load();
+                            } catch (e) {
+                              setOpsErr(e instanceof Error ? e.message : "Disconnect failed.");
+                            }
+                          }}
+                        >
+                          Disconnect Telegram
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 14, marginBottom: 10 }}>
+                      <span style={{ color: "var(--text-muted)" }}>Telegram: </span>
+                      <strong>
+                        {agent.linked === true
+                          ? "Connected"
+                          : agent.linked === false
+                            ? agent.has_product_account === false && agent.id === "trefolio"
+                              ? "No trefolio profile for this login yet"
+                              : "Not connected"
+                            : agent.id === "trefolio"
+                              ? "Could not check (app unreachable or misconfigured)"
+                              : "Link from the app (not checked here)"}
+                      </strong>
+                    </p>
+                    {agent.connect_url ? (
+                      <a
+                        href={agent.connect_url}
+                        className="btn-mini"
+                        style={{ textDecoration: "none" }}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open {agent.id === "trefolio" ? "trefolio profile" : agent.title} →
+                      </a>
+                    ) : null}
+                  </>
+                )}
               </div>
-            </section>
-          ) : null}
+            ))}
+          </section>
 
           <section style={{ marginTop: 36 }}>
             <h2 style={{ fontSize: 18, marginBottom: 8 }}>Passkeys</h2>

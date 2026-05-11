@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { findUserBySub, updateUserBySub, hasOpsTelegramLinkForSub } from "@/lib/db";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 import { isPlatformStaff } from "@/lib/staff";
+import { buildTelegramAgentsPayload } from "@/lib/telegram-agents";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,12 @@ export async function GET() {
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const opsLinked = await hasOpsTelegramLinkForSub(sub);
+  const staff = isPlatformStaff(user);
+  const telegram_agents = await buildTelegramAgentsPayload(sub, {
+    isStaff: staff,
+    opsTelegramLinked: opsLinked,
+  });
+
   return NextResponse.json({
     sub: user.sub,
     email: user.email,
@@ -28,8 +35,9 @@ export async function GET() {
     google_linked: Boolean(user.google_id),
     apple_linked: Boolean(user.apple_id),
     has_password: Boolean(user.password_hash?.trim()),
-    is_platform_staff: isPlatformStaff(user),
+    is_platform_staff: staff,
     ops_telegram_linked: opsLinked,
+    telegram_agents,
   });
 }
 
