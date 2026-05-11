@@ -82,6 +82,7 @@ export default async function AgentsPage() {
     const trefolioBase =
       getProductTargets().find((p) => p.app === "trefolio")?.baseUrl ?? "https://trefolio.com";
     const trefolioSignIn = `${trefolioBase}/login`;
+    const googleOnThisHost = `/api/auth/google/start?next=${encodeURIComponent("/agents")}`;
 
     return (
       <div className="page-shell">
@@ -105,7 +106,11 @@ export default async function AgentsPage() {
                 Your browser sent an <code>idp_session</code> cookie, but this server could not verify it.
                 This usually happens after <strong>IDP_SESSION_SECRET</strong> was rotated, or the cookie was
                 copied from another environment. Clear site data for{" "}
-                <strong>{host || "this host"}</strong> and sign in again from trefolio (or the IdP login screen).
+                <strong>{host || "this host"}</strong> and sign in again (Google on this host, password at{" "}
+                <Link href="/sign-in?next=/agents" style={{ color: "var(--emerald-strong)" }}>
+                  /sign-in
+                </Link>
+                , or via trefolio).
               </div>
             ) : null}
             {canonicalHost && host && host !== canonicalHost ? (
@@ -117,31 +122,46 @@ export default async function AgentsPage() {
             ) : null}
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
               <strong>/agents</strong> needs a valid <code>idp_session</code> cookie on <strong>this host</strong>.
-              Use password sign-in below, or complete the IdP approve screen after opening trefolio (Google / passkey).
+              If you normally use <strong>Google</strong>, use the button below so Google runs here — that always sets
+              the cookie. Trefolio login also works if you complete the IdP screen on this host.
             </p>
             <ol style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
               <li>
-                <strong>Password on file?</strong> Use{" "}
-                <Link href="/sign-in?next=/agents" style={{ color: "var(--emerald-strong)" }}>
-                  sign in on this host
-                </Link>{" "}
-                — it sets <code>idp_session</code> without a trefolio redirect.
+                <strong>Google account?</strong>{" "}
+                <a href={googleOnThisHost} style={{ color: "var(--emerald-strong)" }}>
+                  Sign in with Google on this host
+                </a>{" "}
+                (same flow as account hub; returns you to <code>/agents</code> with <code>idp_session</code>).
               </li>
               <li>
-                Open <Link href={trefolioSignIn}>{trefolioSignIn}</Link> (or Clara / Will) and sign in so you hit
-                the IdP approve screen on this host.
+                <strong>Password on file?</strong>{" "}
+                <Link href="/sign-in?next=/agents" style={{ color: "var(--emerald-strong)" }}>
+                  Email + password on this host
+                </Link>
+                .
               </li>
-              <li>Return here and reload — or open <strong>Admin → Users</strong> first, then <strong>Agents</strong>.</li>
+              <li>
+                Or open <Link href={trefolioSignIn}>{trefolioSignIn}</Link> (or Clara / Will) and finish the IdP approve
+                step here.
+              </li>
+              <li>Reload this page when done.</li>
             </ol>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+              <a
+                className="btn-primary"
+                href={googleOnThisHost}
+                style={{ display: "inline-block", textDecoration: "none" }}
+              >
+                Continue with Google (this host)
+              </a>
               <Link
                 href="/sign-in?next=/agents"
                 className="btn-secondary"
                 style={{ display: "inline-block", textDecoration: "none" }}
               >
-                Sign in with password (this host)
+                Sign in with password
               </Link>
-              <a className="btn-primary" href={trefolioSignIn} style={{ display: "inline-block", textDecoration: "none" }}>
+              <a className="btn-secondary" href={trefolioSignIn} style={{ display: "inline-block", textDecoration: "none" }}>
                 Sign in via trefolio
               </a>
             </div>

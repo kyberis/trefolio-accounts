@@ -18,7 +18,7 @@ const ERRORS: Record<string, string> = {
   missing_fields: "Enter email and password.",
   email_unverified: "Verify your email first (link in your inbox), then try again.",
   oauth_only:
-    "This account has no password on file. Use “Sign in via trefolio” below (Google / passkey) so you complete login on this site.",
+    "This account has no password on file. Use “Continue with Google” on this page, or sign in via trefolio and complete the IdP step here.",
 };
 
 export default async function SignInPage({
@@ -53,6 +53,21 @@ export default async function SignInPage({
             </div>
           ) : null}
 
+          <div style={{ marginBottom: 20 }}>
+            <a
+              className="btn-primary"
+              href={`/api/auth/google/start?next=${encodeURIComponent(next)}`}
+              style={{ display: "inline-block", textDecoration: "none", width: "100%", textAlign: "center", boxSizing: "border-box" }}
+            >
+              Continue with Google
+            </a>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
+              Recommended if you usually sign in with Google — sets <code>idp_session</code> on this hostname.
+            </p>
+          </div>
+
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>Or use your password:</p>
+
           <form action={signInEstablishSession} className="form-stack">
             <input type="hidden" name="next" value={next} />
             <div>
@@ -82,17 +97,17 @@ export default async function SignInPage({
                 minLength={1}
               />
             </div>
-            <button type="submit" className="btn-primary">
-              Sign in
+            <button type="submit" className="btn-secondary" style={{ width: "100%" }}>
+              Sign in with password
             </button>
           </form>
 
           <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 20 }}>
-            <strong>Google or passkey only?</strong>{" "}
+            <strong>Passkey or full app login?</strong>{" "}
             <a className="btn-mini" href={`${trefolioBase}/login`} style={{ textDecoration: "none" }}>
-              Sign in via trefolio →
+              Open trefolio →
             </a>{" "}
-            and complete the IdP screen here — that also sets <code>idp_session</code>.
+            and complete the IdP screen here when prompted.
           </p>
 
           <p style={{ marginTop: 16, fontSize: 14 }}>
