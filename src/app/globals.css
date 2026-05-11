@@ -473,6 +473,13 @@ a:hover {
   margin-top: 8px;
 }
 
+/* Primary action on IdP marketing home (/) */
+.home-login-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
 /* Per-app accent on /upgrade?from=… (subtle border; works light + dark) */
 .upgrade-from-trefolio .upgrade-landing-accent {
   border-left: 4px solid var(--emerald-strong);

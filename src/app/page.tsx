@@ -5,6 +5,7 @@ import { IdpLanguageSwitch } from "@/components/IdpLanguageSwitch";
 import { listUsersWithEntitlements, setPlan, type SeedUserRow } from "@/lib/db";
 import { resolveIdpLocale } from "@/lib/i18n/idp-locale";
 import { getIdpUiCopy } from "@/lib/i18n/idp-messages";
+import { getProductTargets } from "@/lib/product-links";
 import { idpUiLocaleCookieAttributes } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,11 @@ export default async function Home() {
     acceptLanguage: hdrs.get("accept-language"),
   });
   const t = getIdpUiCopy(locale);
+  const trefolioBase =
+    getProductTargets().find((p) => p.app === "trefolio")?.baseUrl ?? "https://trefolio.com";
+  const trefolioLoginUrl = `${trefolioBase}/login?${new URLSearchParams({
+    ui_locales: locale,
+  }).toString()}`;
 
   return (
     <div className="page-shell">
@@ -70,6 +76,12 @@ export default async function Home() {
                 <p>{t.productNotes}</p>
               </div>
             </div>
+          </div>
+
+          <div className="home-login-cta">
+            <a className="btn btn-primary btn-primary-lg" href={trefolioLoginUrl}>
+              {t.signInButton}
+            </a>
           </div>
 
           <p className="legal" style={{ marginTop: 22 }}>
