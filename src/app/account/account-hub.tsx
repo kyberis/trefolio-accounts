@@ -45,6 +45,58 @@ type ProfilePayload = {
   telegram_agents?: TelegramAgentRow[];
 };
 
+/** Shown when API omits agents (older deploy) or payload failed — uses production URLs. */
+const TELEGRAM_AGENTS_FALLBACK: TelegramAgentRow[] = [
+  {
+    id: "trefolio",
+    title: "trefolio (Warren)",
+    description:
+      "Portfolio help, alerts, and Warren on Telegram. Sign in at trefolio with this account, then connect Telegram from your profile.",
+    linked: null,
+    has_product_account: null,
+    connect_url: "https://trefolio.com/profile",
+  },
+  {
+    id: "will",
+    title: "Will",
+    description:
+      "Notes and AI on Telegram and the web. Open Will and connect Telegram from the app if you use it there.",
+    linked: null,
+    has_product_account: null,
+    connect_url: "https://will.trefolio.com/app",
+  },
+  {
+    id: "clara",
+    title: "Clara",
+    description:
+      "Financial agents on the web. Use Clara in the browser; Telegram is not linked from this directory yet.",
+    linked: null,
+    has_product_account: null,
+    connect_url: "https://clara.trefolio.com/app",
+  },
+];
+
+function resolveTelegramAgents(profile: ProfilePayload): TelegramAgentRow[] {
+  const fromApi = profile.telegram_agents;
+  if (Array.isArray(fromApi) && fromApi.length > 0) {
+    return fromApi;
+  }
+  const rows = [...TELEGRAM_AGENTS_FALLBACK];
+  if (profile.is_platform_staff) {
+    rows.push({
+      id: "ops",
+      title: "Business ops (staff)",
+      description:
+        "Platform staff bot: IdP signups, billing signals, and daily digest. Separate from product bots above.",
+      linked: profile.ops_telegram_linked,
+      has_product_account: true,
+      connect_url: "",
+      staff_only: true,
+    });
+  }
+  return rows;
+}
+
 export default function AccountHub({
   fromApp,
   googleConfigured,
@@ -78,11 +130,7 @@ export default function AccountHub({
       const res = await fetch("/api/account/profile", { credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "load_failed");
-      const payload = data as ProfilePayload;
-      if (!Array.isArray(payload.telegram_agents)) {
-        payload.telegram_agents = [];
-      }
-      setProfile(payload);
+      setProfile(data as ProfilePayload);
       setName(data.name || "");
       setAvatarUrl(data.avatar_url || "");
       setTaxResidency(data.tax_residency || "");
@@ -201,9 +249,12 @@ export default function AccountHub({
             One profile for <strong>trefolio</strong>, <strong>Clara</strong>, and <strong>Will</strong>.
           </p>
 
-          <p style={{ marginTop: 12 }}>
+          <p style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <a href={productHome(fromApp)} className="btn-mini" style={{ textDecoration: "none" }}>
               ← {backLabel(fromApp)}
+            </a>
+            <a href="#telegram-agents" className="btn-mini" style={{ textDecoration: "none" }}>
+              Telegram agents ↓
             </a>
           </p>
 
@@ -307,13 +358,15 @@ export default function AccountHub({
             ) : null}
           </section>
 
-          <section style={{ marginTop: 36 }}>
-            <h2 style={{ fontSize: 18, marginBottom: 8 }}>Telegram agents</h2>
+          <section id="telegram-agents" style={{ marginTop: 36 }} aria-labelledby="telegram-agents-heading">
+            <h2 id="telegram-agents-heading" style={{ fontSize: 18, marginBottom: 8 }}>
+              Telegram agents
+            </h2>
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 16 }}>
-              Bots are per product. We show link status when the app reports it; otherwise open the product to
-              connect Telegram while signed in.
+              Bots are per product. Warren / Will / Clara are linked inside each app (buttons below). Staff see an
+              extra row to link the <strong>business ops</strong> bot here on the IdP.
             </p>
-            {(profile.telegram_agents ?? []).map((agent) => (
+            {resolveTelegramAgents(profile).map((agent) => (
               <div
                 key={agent.id}
                 style={{

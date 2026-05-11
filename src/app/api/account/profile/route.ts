@@ -20,10 +20,15 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const opsLinked = await hasOpsTelegramLinkForSub(sub);
   const staff = isPlatformStaff(user);
-  const telegram_agents = await buildTelegramAgentsPayload(sub, {
-    isStaff: staff,
-    opsTelegramLinked: opsLinked,
-  });
+  let telegram_agents: Awaited<ReturnType<typeof buildTelegramAgentsPayload>> = [];
+  try {
+    telegram_agents = await buildTelegramAgentsPayload(sub, {
+      isStaff: staff,
+      opsTelegramLinked: opsLinked,
+    });
+  } catch (err) {
+    console.error("[account/profile] telegram_agents build failed", err);
+  }
 
   return NextResponse.json({
     sub: user.sub,
