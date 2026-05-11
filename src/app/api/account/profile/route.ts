@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-import { findUserBySub, updateUserBySub } from "@/lib/db";
+import { findUserBySub, updateUserBySub, hasOpsTelegramLinkForSub } from "@/lib/db";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
+import { isPlatformStaff } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET() {
   if (!sub) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const opsLinked = await hasOpsTelegramLinkForSub(sub);
   return NextResponse.json({
     sub: user.sub,
     email: user.email,
@@ -26,6 +28,8 @@ export async function GET() {
     google_linked: Boolean(user.google_id),
     apple_linked: Boolean(user.apple_id),
     has_password: Boolean(user.password_hash?.trim()),
+    is_platform_staff: isPlatformStaff(user),
+    ops_telegram_linked: opsLinked,
   });
 }
 

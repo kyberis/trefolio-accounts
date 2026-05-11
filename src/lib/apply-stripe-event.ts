@@ -5,6 +5,7 @@ import {
   upsertStripeCustomerRow,
 } from "@/lib/db";
 import { getIdpStripe } from "@/lib/idp-stripe";
+import { notifyOpsTelegramBillingLine } from "@/lib/ops-telegram-billing-notify";
 
 function readMetadataSub(session: Stripe.Checkout.Session): string | null {
   const m = session.metadata ?? {};
@@ -45,6 +46,7 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
       });
 
       await setPlan(sub, "pro", currentPeriodEnd.toISOString(), "stripe");
+      notifyOpsTelegramBillingLine("checkout_completed → pro", sub);
       return;
     }
 
@@ -71,6 +73,10 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
       });
 
       await setPlan(mappedSub, isActive ? "pro" : "free", isActive ? currentPeriodEnd.toISOString() : null, "stripe");
+      notifyOpsTelegramBillingLine(
+        isActive ? `subscription_${stripeSub.status}` : "subscription_inactive",
+        mappedSub,
+      );
       return;
     }
 
@@ -87,6 +93,7 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
       const stillInPeriod = cpe ? cpe.getTime() > Date.now() : false;
 
       await setPlan(mappedSub, stillInPeriod ? "pro" : "free", stillInPeriod ? cpe!.toISOString() : null, "stripe");
+      notifyOpsTelegramBillingLine("subscription_deleted", mappedSub);
       return;
     }
 

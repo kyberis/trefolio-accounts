@@ -30,6 +30,8 @@ type ProfilePayload = {
   google_linked: boolean;
   apple_linked: boolean;
   has_password: boolean;
+  is_platform_staff: boolean;
+  ops_telegram_linked: boolean;
 };
 
 export default function AccountHub({
@@ -53,6 +55,10 @@ export default function AccountHub({
   const [confirmPwd, setConfirmPwd] = useState("");
   const [pwdMsg, setPwdMsg] = useState("");
   const [pwdErr, setPwdErr] = useState("");
+
+  const [opsDeepLink, setOpsDeepLink] = useState("");
+  const [opsMsg, setOpsMsg] = useState("");
+  const [opsErr, setOpsErr] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -285,6 +291,85 @@ export default function AccountHub({
               </p>
             ) : null}
           </section>
+
+          {profile.is_platform_staff ? (
+            <section style={{ marginTop: 36 }}>
+              <h2 style={{ fontSize: 18, marginBottom: 8 }}>Business notifications (Telegram)</h2>
+              <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 12 }}>
+                For platform staff only. Receive IdP signups, billing alerts, and daily metrics summaries.
+                Uses a separate bot from product (Warren / Clara / Will) linking.
+              </p>
+              <p style={{ fontSize: 14, marginBottom: 8 }}>
+                Status:{" "}
+                <strong>{profile.ops_telegram_linked ? "Telegram linked" : "Not linked"}</strong>
+              </p>
+              {opsErr ? (
+                <p style={{ color: "#f87171", fontSize: 13, marginBottom: 8 }} role="alert">
+                  {opsErr}
+                </p>
+              ) : null}
+              {opsMsg ? (
+                <p style={{ color: "#34d399", fontSize: 13, marginBottom: 8 }} aria-live="polite">
+                  {opsMsg}
+                </p>
+              ) : null}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={async () => {
+                    setOpsErr("");
+                    setOpsMsg("");
+                    setOpsDeepLink("");
+                    try {
+                      const res = await fetch("/api/account/ops-telegram/code", {
+                        method: "POST",
+                        credentials: "include",
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || "link_failed");
+                      const link = String(data.deep_link || "");
+                      setOpsDeepLink(link);
+                      setOpsMsg("Open the link on this phone (Telegram) within 15 minutes.");
+                    } catch (e) {
+                      setOpsErr(e instanceof Error ? e.message : "Could not create link.");
+                    }
+                  }}
+                >
+                  Generate Telegram link
+                </button>
+                {opsDeepLink ? (
+                  <a href={opsDeepLink} className="btn-mini" style={{ textDecoration: "none" }} rel="noreferrer">
+                    Open in Telegram →
+                  </a>
+                ) : null}
+                {profile.ops_telegram_linked ? (
+                  <button
+                    type="button"
+                    className="btn-mini"
+                    onClick={async () => {
+                      setOpsErr("");
+                      setOpsMsg("");
+                      try {
+                        const res = await fetch("/api/account/ops-telegram/disconnect", {
+                          method: "POST",
+                          credentials: "include",
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || "disconnect_failed");
+                        setOpsMsg("Telegram disconnected.");
+                        await load();
+                      } catch (e) {
+                        setOpsErr(e instanceof Error ? e.message : "Disconnect failed.");
+                      }
+                    }}
+                  >
+                    Disconnect Telegram
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           <section style={{ marginTop: 36 }}>
             <h2 style={{ fontSize: 18, marginBottom: 8 }}>Passkeys</h2>

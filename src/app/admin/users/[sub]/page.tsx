@@ -95,6 +95,18 @@ async function deleteUserAction(formData: FormData) {
   redirect("/admin/users");
 }
 
+async function setStaffFlagAction(formData: FormData) {
+  "use server";
+  const ctx = await getIdpAdmin();
+  if (!ctx) return;
+  const sub = String(formData.get("sub") || "");
+  const value = String(formData.get("value") || "0") === "1" ? 1 : 0;
+  if (!sub) return;
+  if (sub === ctx.user.sub && value === 0) return;
+  await updateUserBySub(sub, { is_staff: value });
+  revalidatePath(`/admin/users/${sub}`);
+}
+
 async function grantMembershipAction(formData: FormData) {
   "use server";
   const ctx = await getIdpAdmin();
@@ -361,6 +373,24 @@ export default async function AdminUserDetailPage({
             </label>
             <button type="submit" className="btn btn-primary">
               Save plan
+            </button>
+          </form>
+        </article>
+
+        <article className="card">
+          <h2 className="card-title">Platform staff</h2>
+          <p className="card-subtitle">
+            Staff may link the business ops Telegram bot from <code>/account</code>. Env admins (
+            <code>IDP_ADMIN_EMAILS</code>) always count as staff even when this flag is off.
+          </p>
+          <p className="card-subtitle">
+            Current: <strong>{user.is_staff ? "staff" : "not staff"}</strong>
+          </p>
+          <form action={setStaffFlagAction} className="form-stack admin-inline-form">
+            <input type="hidden" name="sub" value={user.sub} />
+            <input type="hidden" name="value" value={user.is_staff ? "0" : "1"} />
+            <button type="submit" className="btn btn-secondary">
+              {user.is_staff ? "Remove staff flag" : "Grant staff flag"}
             </button>
           </form>
         </article>

@@ -74,6 +74,11 @@ export interface DbUser {
   avatar_url: string;
   /** ISO 3166-1 alpha-2 country code for tax residency (optional). */
   tax_residency: string;
+  /**
+   * Platform staff — may link the business ops Telegram bot from /account.
+   * IdP env admins (`IDP_ADMIN_EMAILS`) are always treated as staff for linking.
+   */
+  is_staff: number;
 }
 
 export interface SeedUserRow {
@@ -94,6 +99,8 @@ export interface AdminUserRow {
   google_id: string | null;
   apple_id: string | null;
   email_verified: number;
+  /** 1 = may use business ops Telegram from account hub. */
+  is_staff: number;
   created_at: string | null;
   /** Password / passkey sign-in attempts (success + failure). */
   idp_auth_attempts: number;
@@ -125,6 +132,7 @@ function sqliteRowToUser(row: any): DbUser {
     locale: String(row.locale ?? "en"),
     avatar_url: String(row.avatar_url ?? ""),
     tax_residency: String(row.tax_residency ?? ""),
+    is_staff: Number(row.is_staff ?? 0) ? 1 : 0,
   };
 }
 
@@ -141,6 +149,7 @@ function pgRowToUser(row: any): DbUser {
     locale: String(row.locale ?? "en"),
     avatar_url: String(row.avatar_url ?? ""),
     tax_residency: String(row.tax_residency ?? ""),
+    is_staff: row.is_staff ? 1 : 0,
   };
 }
 
@@ -210,6 +219,17 @@ async function ensurePostgresSchema(): Promise<void> {
           sub TEXT NOT NULL,
           verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS ops_telegram_links (
+          tg_user_id TEXT PRIMARY KEY,
+          sub TEXT NOT NULL,
+          verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS ops_telegram_link_codes (
+          code TEXT PRIMARY KEY,
+          sub TEXT NOT NULL,
+          expires_at BIGINT NOT NULL,
+          used BOOLEAN NOT NULL DEFAULT FALSE
+        );
         CREATE TABLE IF NOT EXISTS passkeys (
           id TEXT PRIMARY KEY,
           sub TEXT NOT NULL REFERENCES users(sub) ON DELETE CASCADE,
@@ -264,6 +284,7 @@ async function ensurePostgresSchema(): Promise<void> {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_activated_at TIMESTAMPTZ;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_residency TEXT NOT NULL DEFAULT '';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_staff BOOLEAN NOT NULL DEFAULT FALSE;
       `);
     } finally {
       client.release();
@@ -334,6 +355,17 @@ function getSqliteDb(): Database.Database {
       sub TEXT NOT NULL,
       verified_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS ops_telegram_links (
+      tg_user_id TEXT PRIMARY KEY,
+      sub TEXT NOT NULL,
+      verified_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS ops_telegram_link_codes (
+      code TEXT PRIMARY KEY,
+      sub TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS passkeys (
       id TEXT PRIMARY KEY,
       sub TEXT NOT NULL,
@@ -394,6 +426,7 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN trial_activated_at TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN tax_residency TEXT NOT NULL DEFAULT ''`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -490,7 +523,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE lower(email) = $1`,
       [normalized],
     );
@@ -499,7 +532,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE lower(email) = ?`,
     )
     .get(normalized) as any;
@@ -510,7 +543,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE google_id = $1`,
       [googleId],
     );
@@ -518,7 +551,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   }
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE google_id = ?`,
     )
     .get(googleId) as any;
@@ -529,7 +562,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE sub = $1`,
       [sub],
     );
@@ -538,7 +571,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
        FROM users WHERE sub = ?`,
     )
     .get(sub) as any;
@@ -628,9 +661,9 @@ export async function createUser(args: {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff`,
       [
         sub,
         email,
@@ -643,6 +676,7 @@ export async function createUser(args: {
         locale,
         args.avatarUrl ?? "",
         args.taxResidency ?? "",
+        false,
       ],
     );
     await getPool().query(
@@ -655,8 +689,8 @@ export async function createUser(args: {
     getSqliteDb()
       .prepare(
         `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sub,
@@ -670,6 +704,7 @@ export async function createUser(args: {
         locale,
         avatarUrl,
         taxResidency,
+        0,
       );
     getSqliteDb().prepare(`INSERT INTO entitlements (sub, plan) VALUES (?, 'free')`).run(sub);
     created = {
@@ -684,6 +719,7 @@ export async function createUser(args: {
       locale,
       avatar_url: avatarUrl,
       tax_residency: taxResidency,
+      is_staff: 0,
     };
   }
 
@@ -711,6 +747,7 @@ export async function updateUserBySub(
       | "locale"
       | "avatar_url"
       | "tax_residency"
+      | "is_staff"
     >
   >,
 ): Promise<void> {
@@ -753,6 +790,10 @@ export async function updateUserBySub(
     if (patch.tax_residency !== undefined) {
       values.push(patch.tax_residency);
       sets.push(`tax_residency = $${values.length}`);
+    }
+    if (patch.is_staff !== undefined) {
+      values.push(Boolean(patch.is_staff));
+      sets.push(`is_staff = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(sub);
@@ -800,6 +841,10 @@ export async function updateUserBySub(
   if (patch.tax_residency !== undefined) {
     sets.push("tax_residency = ?");
     args.push(patch.tax_residency);
+  }
+  if (patch.is_staff !== undefined) {
+    sets.push("is_staff = ?");
+    args.push(patch.is_staff ? 1 : 0);
   }
   if (sets.length === 0) return;
   args.push(sub);
@@ -1064,6 +1109,7 @@ export async function listUsersForAdmin(args: {
     const offsetIdx = params.length + 2;
     const list = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.is_staff, false) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
@@ -1088,6 +1134,7 @@ export async function listUsersForAdmin(args: {
         google_id: row.google_id ?? null,
         apple_id: row.apple_id ?? null,
         email_verified: row.email_verified ? 1 : 0,
+        is_staff: row.is_staff ? 1 : 0,
         created_at: toIsoString(row.created_at),
         idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
         idp_auth_failures: Number(row.idp_auth_failures ?? 0),
@@ -1107,6 +1154,7 @@ export async function listUsersForAdmin(args: {
   const rows = db
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.is_staff, 0) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
               COALESCE(e.plan, 'free') AS plan, e.pro_until, e.source
@@ -1130,6 +1178,7 @@ export async function listUsersForAdmin(args: {
       google_id: row.google_id ?? null,
       apple_id: row.apple_id ?? null,
       email_verified: row.email_verified ? 1 : 0,
+      is_staff: Number(row.is_staff ?? 0) ? 1 : 0,
       created_at: toIsoString(row.created_at),
       idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
       idp_auth_failures: Number(row.idp_auth_failures ?? 0),
@@ -1148,6 +1197,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.is_staff, false) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
               COALESCE(u.membership_grant_token, '') AS membership_grant_token,
@@ -1173,6 +1223,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       google_id: row.google_id ?? null,
       apple_id: row.apple_id ?? null,
       email_verified: row.email_verified ? 1 : 0,
+      is_staff: Number(row.is_staff ?? 0) ? 1 : 0,
       created_at: toIsoString(row.created_at),
       idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
       idp_auth_failures: Number(row.idp_auth_failures ?? 0),
@@ -1185,6 +1236,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
   const row = getSqliteDb()
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              COALESCE(u.is_staff, 0) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
               COALESCE(u.membership_grant_token, '') AS membership_grant_token,
@@ -1209,6 +1261,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     google_id: row.google_id ?? null,
     apple_id: row.apple_id ?? null,
     email_verified: row.email_verified ? 1 : 0,
+    is_staff: Number(row.is_staff ?? 0) ? 1 : 0,
     created_at: toIsoString(row.created_at),
     idp_auth_attempts: Number(row.idp_auth_attempts ?? 0),
     idp_auth_failures: Number(row.idp_auth_failures ?? 0),
@@ -1222,6 +1275,8 @@ export async function deleteUserBySub(sub: string): Promise<void> {
   if (usePostgres) {
     await ensurePostgresSchema();
     await getPool().query(`DELETE FROM entitlements WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM ops_telegram_link_codes WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM ops_telegram_links WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM telegram_links WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM auth_codes WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM passkeys WHERE sub = $1`, [sub]);
@@ -1230,6 +1285,8 @@ export async function deleteUserBySub(sub: string): Promise<void> {
   }
   const db = getSqliteDb();
   db.prepare(`DELETE FROM entitlements WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM ops_telegram_link_codes WHERE sub = ?`).run(sub);
+  db.prepare(`DELETE FROM ops_telegram_links WHERE sub = ?`).run(sub);
   db.prepare(`DELETE FROM telegram_links WHERE sub = ?`).run(sub);
   db.prepare(`DELETE FROM auth_codes WHERE sub = ?`).run(sub);
   db.prepare(`DELETE FROM passkeys WHERE sub = ?`).run(sub);
@@ -1811,6 +1868,220 @@ export async function activateTrialForSub(
   }
 
   return { ok: true, proUntil };
+}
+
+// ── Ops Telegram (business notifications, staff only) ───────────────────────
+
+const OPS_LINK_CODE_TTL_MS = 15 * 60_000;
+
+export async function mintOpsTelegramLinkCode(sub: string): Promise<{ code: string; expiresAt: number }> {
+  const code = randomBytes(9).toString("base64url").replace(/=/g, "");
+  const expiresAt = Date.now() + OPS_LINK_CODE_TTL_MS;
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(`DELETE FROM ops_telegram_link_codes WHERE sub = $1`, [sub]);
+    await getPool().query(
+      `INSERT INTO ops_telegram_link_codes (code, sub, expires_at, used) VALUES ($1, $2, $3, FALSE)`,
+      [code, sub, expiresAt],
+    );
+    return { code, expiresAt };
+  }
+  const db = getSqliteDb();
+  db.prepare(`DELETE FROM ops_telegram_link_codes WHERE sub = ?`).run(sub);
+  db.prepare(`INSERT INTO ops_telegram_link_codes (code, sub, expires_at, used) VALUES (?, ?, ?, 0)`).run(
+    code,
+    sub,
+    expiresAt,
+  );
+  return { code, expiresAt };
+}
+
+export type ConsumeOpsTelegramCodeResult =
+  | { ok: true; sub: string }
+  | { ok: false; reason: "invalid" | "expired" | "used" };
+
+export async function consumeOpsTelegramLinkCode(rawCode: string, tgUserId: string): Promise<ConsumeOpsTelegramCodeResult> {
+  const code = rawCode.trim();
+  if (!code) return { ok: false, reason: "invalid" };
+
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `SELECT sub, expires_at, used FROM ops_telegram_link_codes WHERE code = $1 FOR UPDATE`,
+        [code],
+      );
+      const row = rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "invalid" };
+      }
+      if (row.used) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "used" };
+      }
+      if (Number(row.expires_at) < Date.now()) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "expired" };
+      }
+      await client.query(`UPDATE ops_telegram_link_codes SET used = TRUE WHERE code = $1`, [code]);
+      await client.query(
+        `INSERT INTO ops_telegram_links (tg_user_id, sub)
+         VALUES ($1, $2)
+         ON CONFLICT (tg_user_id) DO UPDATE SET sub = EXCLUDED.sub, verified_at = NOW()`,
+        [tgUserId, String(row.sub)],
+      );
+      await client.query("COMMIT");
+      return { ok: true, sub: String(row.sub) };
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  const db = getSqliteDb();
+  const row = db
+    .prepare(`SELECT sub, expires_at, used FROM ops_telegram_link_codes WHERE code = ?`)
+    .get(code) as { sub: string; expires_at: number; used: number } | undefined;
+  if (!row) return { ok: false, reason: "invalid" };
+  if (row.used) return { ok: false, reason: "used" };
+  if (Number(row.expires_at) < Date.now()) return { ok: false, reason: "expired" };
+  db.prepare(`UPDATE ops_telegram_link_codes SET used = 1 WHERE code = ?`).run(code);
+  db
+    .prepare(
+      `INSERT INTO ops_telegram_links (tg_user_id, sub) VALUES (?, ?)
+       ON CONFLICT(tg_user_id) DO UPDATE SET sub = excluded.sub`,
+    )
+    .run(tgUserId, row.sub);
+  return { ok: true, sub: row.sub };
+}
+
+export async function deleteOpsTelegramLinkForSub(sub: string): Promise<void> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(`DELETE FROM ops_telegram_links WHERE sub = $1`, [sub]);
+    return;
+  }
+  getSqliteDb().prepare(`DELETE FROM ops_telegram_links WHERE sub = ?`).run(sub);
+}
+
+export async function findSubByOpsTelegramId(tgUserId: string): Promise<string | null> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(`SELECT sub FROM ops_telegram_links WHERE tg_user_id = $1`, [
+      tgUserId,
+    ]);
+    return rows[0]?.sub ? String(rows[0].sub) : null;
+  }
+  const row = getSqliteDb()
+    .prepare(`SELECT sub FROM ops_telegram_links WHERE tg_user_id = ?`)
+    .get(tgUserId) as { sub: string } | undefined;
+  return row?.sub ?? null;
+}
+
+export async function listOpsTelegramChatIds(): Promise<string[]> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(`SELECT tg_user_id FROM ops_telegram_links`);
+    return rows.map((r: { tg_user_id: string }) => String(r.tg_user_id));
+  }
+  const rows = getSqliteDb()
+    .prepare(`SELECT tg_user_id FROM ops_telegram_links`)
+    .all() as { tg_user_id: string }[];
+  return rows.map((r) => String(r.tg_user_id));
+}
+
+export async function hasOpsTelegramLinkForSub(sub: string): Promise<boolean> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const { rows } = await getPool().query(
+      `SELECT 1 FROM ops_telegram_links WHERE sub = $1 LIMIT 1`,
+      [sub],
+    );
+    return rows.length > 0;
+  }
+  const row = getSqliteDb()
+    .prepare(`SELECT 1 AS n FROM ops_telegram_links WHERE sub = ? LIMIT 1`)
+    .get(sub) as { n: number } | undefined;
+  return Boolean(row);
+}
+
+export interface IdpOpsDbStats {
+  totalUsers: number;
+  verifiedUsers: number;
+  proEntitlements: number;
+  signupsLast24h: number;
+  signupsLast7d: number;
+  checkoutIntentsLast7d: number;
+}
+
+export async function getIdpOpsDbStats(): Promise<IdpOpsDbStats> {
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    const [
+      totals,
+      s24,
+      s7,
+      ci,
+    ] = await Promise.all([
+      getPool().query(`SELECT
+          COUNT(*)::int AS n,
+          COUNT(*) FILTER (WHERE email_verified = TRUE)::int AS nv
+        FROM users`),
+      getPool().query(
+        `SELECT COUNT(*)::int AS n FROM users WHERE created_at > NOW() - INTERVAL '1 day'`,
+      ),
+      getPool().query(
+        `SELECT COUNT(*)::int AS n FROM users WHERE created_at > NOW() - INTERVAL '7 days'`,
+      ),
+      getPool().query(
+        `SELECT COUNT(*)::int AS n FROM subscription_checkout_intents WHERE created_at > NOW() - INTERVAL '7 days'`,
+      ),
+    ]);
+    const pro = await getPool().query(`SELECT COUNT(*)::int AS n FROM entitlements WHERE plan = 'pro'`);
+    return {
+      totalUsers: Number(totals.rows[0]?.n ?? 0),
+      verifiedUsers: Number(totals.rows[0]?.nv ?? 0),
+      proEntitlements: Number(pro.rows[0]?.n ?? 0),
+      signupsLast24h: Number(s24.rows[0]?.n ?? 0),
+      signupsLast7d: Number(s7.rows[0]?.n ?? 0),
+      checkoutIntentsLast7d: Number(ci.rows[0]?.n ?? 0),
+    };
+  }
+
+  const db = getSqliteDb();
+  const totals = db
+    .prepare(
+      `SELECT
+        COUNT(*) AS n,
+        SUM(CASE WHEN email_verified != 0 THEN 1 ELSE 0 END) AS nv
+      FROM users`,
+    )
+    .get() as { n: number; nv: number };
+  const s24 = db
+    .prepare(`SELECT COUNT(*) AS n FROM users WHERE datetime(created_at) > datetime('now', '-1 day')`)
+    .get() as { n: number };
+  const s7 = db
+    .prepare(`SELECT COUNT(*) AS n FROM users WHERE datetime(created_at) > datetime('now', '-7 days')`)
+    .get() as { n: number };
+  const ci = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM subscription_checkout_intents WHERE datetime(created_at) > datetime('now', '-7 days')`,
+    )
+    .get() as { n: number };
+  const pro = db.prepare(`SELECT COUNT(*) AS n FROM entitlements WHERE plan = 'pro'`).get() as { n: number };
+  return {
+    totalUsers: Number(totals.n ?? 0),
+    verifiedUsers: Number(totals.nv ?? 0),
+    proEntitlements: Number(pro.n ?? 0),
+    signupsLast24h: Number(s24.n ?? 0),
+    signupsLast7d: Number(s7.n ?? 0),
+    checkoutIntentsLast7d: Number(ci.n ?? 0),
+  };
 }
 
 // ── Personal access tokens (MCP / AI integrations, Clara + Will + trefolio) ──
