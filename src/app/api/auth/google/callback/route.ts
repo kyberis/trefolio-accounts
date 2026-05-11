@@ -16,13 +16,20 @@ import {
   readPending,
 } from "@/lib/oidc-pending";
 import {
-  IDP_SESSION_COOKIE,
   sessionCookieAttributes,
   signSession,
 } from "@/lib/session";
 import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
 
 export const dynamic = "force-dynamic";
+
+/** NextResponse.redirect on the server requires absolute URLs in production. */
+function absoluteRedirectUrl(req: NextRequest, target: string): string {
+  if (target.startsWith("http://") || target.startsWith("https://")) {
+    return target;
+  }
+  return new URL(target, req.url).toString();
+}
 
 function clearPendingCookie(res: NextResponse): void {
   const attrs = pendingCookieAttributes();
@@ -163,7 +170,7 @@ export async function GET(req: NextRequest) {
     target = safeNext;
   }
 
-  const res = NextResponse.redirect(target);
+  const res = NextResponse.redirect(absoluteRedirectUrl(req, target));
   setSessionCookie(res, user.sub);
   clearPendingCookie(res);
   return res;
