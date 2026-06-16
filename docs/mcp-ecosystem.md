@@ -39,6 +39,37 @@ Use one PAT in headers for each server entry:
 }
 ```
 
+### Claude Desktop — OAuth Client ID vs PAT
+
+**Claude Desktop → Settings → Connectors → Custom connector** asks for an **OAuth Client ID**. The trefolio ecosystem uses a **personal access token** (`tfp_pat_…`), not OAuth. **There is no Client ID to enter.**
+
+Use the config file instead (macOS):
+
+`~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "trefolio": {
+      "type": "http",
+      "url": "https://trefolio.com/api/mcp/user/mcp",
+      "headers": { "Authorization": "Bearer tfp_pat_YOUR_TOKEN_HERE" }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving. Full guide: https://trefolio.com/api/docs/claude-desktop
+
+**Claude Code CLI:**
+
+```bash
+claude mcp add --transport http trefolio https://trefolio.com/api/mcp/user/mcp \
+  --header "Authorization: Bearer tfp_pat_YOUR_TOKEN_HERE"
+```
+
+**Cursor** uses `~/.cursor/mcp.json` with the same `url` + `headers` pattern as the first JSON block above.
+
 Exact path suffix (`/mcp` vs SSE) is defined in each product’s MCP route — prefer discovery via `/.well-known/mcp.json` on each host.
 
 ## OpenAI, Anthropic, Google
