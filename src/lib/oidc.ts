@@ -173,6 +173,16 @@ export const STATIC_CLIENTS: OidcClient[] = [
     ],
     name: "Will",
   },
+  {
+    clientId: "claude-mcp",
+    clientSecret: process.env.IDP_CLIENT_SECRET_CLAUDE_MCP || "dev-claude-mcp-secret",
+    redirectUris: [
+      "https://claude.ai/api/mcp/auth_callback",
+      "http://localhost:3118/callback",
+      "http://127.0.0.1:3118/callback",
+    ],
+    name: "Claude (MCP Connectors)",
+  },
 ];
 
 export function findClient(clientId: string): OidcClient | null {

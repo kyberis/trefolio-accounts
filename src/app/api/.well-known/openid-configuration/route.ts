@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     grant_types_supported: ["authorization_code"],
     code_challenge_methods_supported: ["S256"],
     id_token_signing_alg_values_supported: ["RS256"],
-    scopes_supported: ["openid", "email", "profile"],
+    scopes_supported: ["openid", "email", "profile", "mcp:ecosystem"],
     subject_types_supported: ["public"],
   });
 }
