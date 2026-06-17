@@ -181,6 +181,7 @@ export const STATIC_CLIENTS: OidcClient[] = [
       "http://localhost:3118/callback",
       "http://127.0.0.1:3118/callback",
     ],
+    frontchannelLogoutUris: [],
     name: "Claude (MCP Connectors)",
   },
 ];
