@@ -275,6 +275,7 @@ async function ensurePostgresSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS personal_access_tokens_sub_idx
           ON personal_access_tokens (sub);
+        ALTER TABLE personal_access_tokens ADD COLUMN IF NOT EXISTS scopes_json TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_token TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_plan TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_grant_days INTEGER NOT NULL DEFAULT 0;
@@ -427,6 +428,7 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN tax_residency TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE personal_access_tokens ADD COLUMN scopes_json TEXT`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
   );
@@ -2163,22 +2165,24 @@ export async function insertPersonalAccessToken(input: {
   prefix: string;
   name: string;
   expiresAt: Date | null;
+  scopesJson?: string | null;
 }): Promise<{ id: string }> {
   const id = newPatRowId();
   const name = input.name.trim().slice(0, 80) || "MCP";
+  const scopesJson = input.scopesJson ?? null;
   if (usePostgres) {
     await ensurePostgresSchema();
     await getPool().query(
-      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, input.sub, input.tokenHash, input.prefix, name, input.expiresAt],
+      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at, scopes_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, input.sub, input.tokenHash, input.prefix, name, input.expiresAt, scopesJson],
     );
     return { id };
   }
   getSqliteDb()
     .prepare(
-      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO personal_access_tokens (id, sub, token_hash, prefix, name, expires_at, scopes_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -2187,6 +2191,7 @@ export async function insertPersonalAccessToken(input: {
       input.prefix,
       name,
       input.expiresAt ? input.expiresAt.toISOString() : null,
+      scopesJson,
     );
   return { id };
 }
@@ -2211,7 +2216,7 @@ export async function revokePersonalAccessToken(id: string, sub: string): Promis
   return r.changes > 0;
 }
 
-export type PatIntrospectHit = { id: string; sub: string };
+export type PatIntrospectHit = { id: string; sub: string; scopesJson: string | null };
 
 /**
  * Lookup by SHA-256 hex hash of plaintext token. Returns null if missing,
@@ -2223,25 +2228,33 @@ export async function findActivePersonalAccessTokenByHash(
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT id, sub FROM personal_access_tokens
+      `SELECT id, sub, scopes_json FROM personal_access_tokens
        WHERE token_hash = $1 AND revoked_at IS NULL
          AND (expires_at IS NULL OR expires_at > NOW())`,
       [tokenHash],
     );
     const row = rows[0];
     if (!row) return null;
-    return { id: String(row.id), sub: String(row.sub) };
+    return {
+      id: String(row.id),
+      sub: String(row.sub),
+      scopesJson: row.scopes_json != null ? String(row.scopes_json) : null,
+    };
   }
   const row = getSqliteDb()
     .prepare(
-      `SELECT id, sub FROM personal_access_tokens
+      `SELECT id, sub, scopes_json FROM personal_access_tokens
        WHERE token_hash = ?
          AND (revoked_at IS NULL OR revoked_at = '')
          AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
     )
-    .get(tokenHash) as { id: string; sub: string } | undefined;
+    .get(tokenHash) as { id: string; sub: string; scopes_json: string | null } | undefined;
   if (!row) return null;
-  return { id: String(row.id), sub: String(row.sub) };
+  return {
+    id: String(row.id),
+    sub: String(row.sub),
+    scopesJson: row.scopes_json != null ? String(row.scopes_json) : null,
+  };
 }
 
 export async function touchPersonalAccessTokenLastUsed(id: string): Promise<void> {

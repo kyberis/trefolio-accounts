@@ -105,7 +105,7 @@ describe("POST /api/v1/pat/introspect", () => {
   it("returns active true with sub and token_id when row exists", async () => {
     const { plaintext } = generatePatPlaintext();
     const h = hashPat(plaintext);
-    mockFind.mockResolvedValueOnce({ id: "pat-row-1", sub: "idp|user-99" });
+    mockFind.mockResolvedValueOnce({ id: "pat-row-1", sub: "idp|user-99", scopesJson: '["portfolio:read","warren:moat"]' });
     const res = await POST(
       new Request("http://localhost/api/v1/pat/introspect", {
         method: "POST",
@@ -123,6 +123,7 @@ describe("POST /api/v1/pat/introspect", () => {
       sub: "idp|user-99",
       token_id: "pat-row-1",
       scope: "mcp:ecosystem",
+      scopes: ["portfolio:read", "warren:moat"],
     });
     expect(mockFind).toHaveBeenCalledWith(h);
     await vi.waitFor(() => {

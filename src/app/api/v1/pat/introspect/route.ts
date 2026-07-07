@@ -9,6 +9,7 @@ import {
   getPatIntrospectionSecret,
   isPatIntrospectionAuthorized,
 } from "@/lib/pat-introspection-auth";
+import { parseMcpPatScopesJson, resolveEffectiveMcpPatScopes } from "@/lib/pat-scopes";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ const MCP_SCOPE = "mcp:ecosystem";
  * `Authorization: Bearer <TREFOLIO_PAT_INTROSPECTION_SECRET>`
  * Body JSON: `{ "token": "tfp_pat_…" }`
  *
- * Response: `{ "active": true, "sub": "…", "token_id": "…", "scope": "mcp:ecosystem" }` or `{ "active": false }`.
+ * Response: `{ "active": true, "sub": "…", "token_id": "…", "scope": "mcp:ecosystem", "scopes": ["portfolio:read", …] }` or `{ "active": false }`.
  */
 export async function POST(req: Request) {
   if (!getPatIntrospectionSecret()) {
@@ -53,10 +54,13 @@ export async function POST(req: Request) {
     console.error("[pat/introspect] last_used bump failed", err);
   });
 
+  const scopes = resolveEffectiveMcpPatScopes(parseMcpPatScopesJson(hit.scopesJson));
+
   return NextResponse.json({
     active: true,
     sub: hit.sub,
     token_id: hit.id,
     scope: MCP_SCOPE,
+    scopes,
   });
 }

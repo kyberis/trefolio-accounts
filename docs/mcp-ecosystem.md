@@ -10,6 +10,24 @@ One **personal access token (PAT)** is created on **[user.trefolio.com/account/d
 
 Prefix: `tfp_pat_` (minted only by Accounts).
 
+### PAT scopes (trefolio MCP)
+
+When minting a token, choose scopes on the Developer page. Defaults: `portfolio:read`, `tools:read`, `warren:moat`. Opt in to `tax:read`, `warren:ai`, `portfolio:write`, `finance:read` / `finance:write` (Clara), and `notes:read` / `notes:write` (Will) for sensitive or sister-app tools. Tokens created before scopes shipped keep full ecosystem access until revoked.
+
+## Agent routing (which MCP server to use)
+
+Use **one PAT** and connect **three MCP servers** in your client. Route work by domain — do not call trefolio for Clara/Will data or vice versa.
+
+| Need | MCP server | Example tools |
+|------|------------|---------------|
+| Portfolio, MOAT, tax, screener, alerts | **trefolio** | `getPortfolioSummary`, `listTransactions`, `getTaxReport`, `runMoatEvaluation`, `screenStocks` |
+| Budget, expenses, savings (Clara) | **Clara** | `getProfile`, `getSavings`, `getSavingsSummary`, month expense tools |
+| Notes journal (Will) | **Will** | `searchNotes`, `listRecentNotes`, `getNote`, `createNote` |
+
+**Scopes:** each host enforces only its scopes. A default token (trefolio read + MOAT) does **not** include Clara or Will until you enable `finance:read` and/or `notes:read` on user.trefolio.com → Developer.
+
+**Office vs MCP:** Warren in-app coordination uses internal REST (`IDP_SERVICE_TOKEN`) — not user PAT. `getSavingsSummary` on Clara MCP mirrors the Office savings summary shape for external agents.
+
 ## Server configuration (operators)
 
 Set the **same** secret on **Accounts** and on **Clara, Will, and trefolio**:

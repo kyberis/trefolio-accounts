@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  DEFAULT_MCP_PAT_SCOPES,
+  MCP_PAT_SCOPE_IDS,
+  MCP_PAT_SCOPE_LABELS,
+  type McpPatScope,
+} from "@/lib/pat-scopes";
+
 type TokenRow = {
   id: string;
   prefix: string;
@@ -17,7 +24,14 @@ export function PatManager() {
   const [error, setError] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [name, setName] = useState("Claude / Cursor");
+  const [selectedScopes, setSelectedScopes] = useState<McpPatScope[]>([...DEFAULT_MCP_PAT_SCOPES]);
   const [busy, setBusy] = useState(false);
+
+  function toggleScope(scope: McpPatScope) {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+    );
+  }
 
   const load = useCallback(async () => {
     setError(null);
@@ -44,7 +58,7 @@ export function PatManager() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, scopes: selectedScopes }),
       });
       const data = (await res.json()) as { token?: string; error?: string; message?: string };
       if (!res.ok) {
@@ -144,10 +158,45 @@ export function PatManager() {
             disabled={busy}
           />
         </label>
-        <button type="button" className="btn-mini" onClick={() => void createToken()} disabled={busy}>
+        <button type="button" className="btn-mini" onClick={() => void createToken()} disabled={busy || selectedScopes.length === 0}>
           Create token
         </button>
       </div>
+
+      <fieldset style={{ border: "none", padding: 0, margin: "0 0 20px" }}>
+        <legend style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Scopes</legend>
+        <div style={{ display: "grid", gap: 8 }}>
+          {MCP_PAT_SCOPE_IDS.map((scope) => {
+            const meta = MCP_PAT_SCOPE_LABELS[scope];
+            const checked = selectedScopes.includes(scope);
+            return (
+              <label
+                key={scope}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "flex-start",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleScope(scope)}
+                  disabled={busy}
+                />
+                <span>
+                  <strong>{meta.title}</strong>
+                  <span style={{ display: "block", color: "var(--text-muted)", fontSize: 12 }}>
+                    {meta.description} ({scope})
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <h2 style={{ fontSize: 18, marginBottom: 8 }}>Your tokens</h2>
       {tokens === null ? (

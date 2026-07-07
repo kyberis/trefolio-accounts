@@ -7,6 +7,11 @@ import {
   listPersonalAccessTokensForSub,
 } from "@/lib/db";
 import { generatePatPlaintext } from "@/lib/personal-access-token-crypto";
+import {
+  DEFAULT_MCP_PAT_SCOPES,
+  normalizeMcpPatScopes,
+  serializeMcpPatScopes,
+} from "@/lib/pat-scopes";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -50,8 +55,13 @@ export async function POST(req: Request) {
 
   let name = "MCP";
   let expiresInDays: number | null = null;
+  let scopes = DEFAULT_MCP_PAT_SCOPES;
   try {
-    const body = (await req.json()) as { name?: string; expires_in_days?: number | null };
+    const body = (await req.json()) as {
+      name?: string;
+      expires_in_days?: number | null;
+      scopes?: string[];
+    };
     if (typeof body.name === "string" && body.name.trim()) {
       name = body.name.trim().slice(0, 80);
     }
@@ -59,6 +69,10 @@ export async function POST(req: Request) {
       expiresInDays = null;
     } else if (typeof body.expires_in_days === "number" && body.expires_in_days > 0) {
       expiresInDays = Math.min(365, Math.floor(body.expires_in_days));
+    }
+    if (body.scopes !== undefined) {
+      const normalized = normalizeMcpPatScopes(body.scopes);
+      scopes = normalized.length > 0 ? normalized : DEFAULT_MCP_PAT_SCOPES;
     }
   } catch {
     // empty body ok
@@ -76,6 +90,7 @@ export async function POST(req: Request) {
     prefix: gen.prefix,
     name,
     expiresAt,
+    scopesJson: serializeMcpPatScopes(scopes),
   });
 
   return NextResponse.json({
@@ -84,5 +99,6 @@ export async function POST(req: Request) {
     prefix: gen.prefix,
     name,
     expires_at: expiresAt?.toISOString() ?? null,
+    scopes,
   });
 }
