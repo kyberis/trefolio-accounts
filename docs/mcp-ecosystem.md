@@ -12,7 +12,7 @@ Prefix: `tfp_pat_` (minted only by Accounts).
 
 ### PAT scopes (trefolio MCP)
 
-When minting a token, choose scopes on the Developer page. Defaults: `portfolio:read`, `tools:read`, `warren:moat`. Opt in to `tax:read`, `warren:ai`, `portfolio:write`, `finance:read` / `finance:write` (Clara), and `notes:read` / `notes:write` (Will) for sensitive or sister-app tools. Tokens created before scopes shipped keep full ecosystem access until revoked.
+When minting a token, choose scopes on the Developer page. Defaults: `portfolio:read`, `tools:read`, `warren:moat`. Opt in to `tax:read`, `warren:ai`, `portfolio:write`, `market:fmp` (FMP stable API proxy on trefolio MCP; Pro + feature flag), `finance:read` / `finance:write` (Clara), and `notes:read` / `notes:write` (Will) for sensitive or sister-app tools. Tokens created before scopes shipped keep full ecosystem access until revoked.
 
 ## Agent routing (which MCP server to use)
 

@@ -6,6 +6,7 @@ export const TREFOLIO_PAT_SCOPE_IDS = [
   "warren:ai",
   "tax:read",
   "portfolio:write",
+  "market:fmp",
 ] as const;
 
 export const CLARA_PAT_SCOPE_IDS = ["finance:read", "finance:write"] as const;
@@ -54,6 +55,10 @@ export const MCP_PAT_SCOPE_LABELS: Record<McpPatScope, { title: string; descript
   "portfolio:write": {
     title: "Save MOAT reports",
     description: "Persist MOAT evaluations to your library",
+  },
+  "market:fmp": {
+    title: "FMP market data",
+    description: "Financial Modeling Prep stable API proxy via trefolio MCP (Pro; rate limited)",
   },
   "finance:read": {
     title: "Clara read",
