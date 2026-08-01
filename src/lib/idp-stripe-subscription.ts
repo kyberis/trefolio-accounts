@@ -72,3 +72,42 @@ export async function hasActiveManagedStripeSubscriptionIdp(sub: string): Promis
     return false;
   }
 }
+
+/**
+ * Best-effort cancel of any open Stripe subscriptions before IdP account erasure.
+ * Failures are logged and swallowed so GDPR deletion is not blocked by Stripe outages.
+ */
+export async function cancelStripeSubscriptionsForAccountDeletion(sub: string): Promise<void> {
+  const row = await getStripeCustomerBySub(sub);
+  const customerId = row?.stripe_customer_id?.trim();
+  if (!customerId && !row?.stripe_subscription_id?.trim()) return;
+
+  try {
+    const stripe = getIdpStripe();
+    const hinted = row?.stripe_subscription_id?.trim();
+    if (hinted) {
+      try {
+        await stripe.subscriptions.cancel(hinted);
+      } catch (err) {
+        console.warn("[stripe] cancel hinted subscription on account delete failed", err);
+      }
+    }
+    if (!customerId) return;
+    const list = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 20,
+    });
+    for (const s of list.data) {
+      if (s.status === "canceled" || s.status === "incomplete_expired") continue;
+      if (hinted && s.id === hinted) continue;
+      try {
+        await stripe.subscriptions.cancel(s.id);
+      } catch (err) {
+        console.warn("[stripe] cancel subscription on account delete failed", s.id, err);
+      }
+    }
+  } catch (err) {
+    console.warn("[stripe] cancelStripeSubscriptionsForAccountDeletion failed", err);
+  }
+}

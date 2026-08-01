@@ -176,6 +176,48 @@ export async function probeProductLinks(args: {
 }
 
 const TELEGRAM_LINK_STATUS_TIMEOUT_MS = 2000;
+const ACCOUNT_DELETED_NOTIFY_TIMEOUT_MS = 4000;
+
+/**
+ * Notify trefolio that this IdP subject deleted their unified account so
+ * product analytics can record `account_deleted` and local data can be purged.
+ * Best-effort: failures are logged and do not block IdP erasure.
+ */
+export async function notifyTrefolioAccountDeleted(sub: string): Promise<void> {
+  const token = process.env.IDP_SERVICE_TOKEN?.trim();
+  if (!token) {
+    console.warn("[account-deleted] IDP_SERVICE_TOKEN missing; skip trefolio notify");
+    return;
+  }
+
+  const target = getProductTargets().find((t) => t.app === "trefolio");
+  if (!target) return;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ACCOUNT_DELETED_NOTIFY_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${target.baseUrl}/api/internal/account-deleted`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        ...vercelProtectionBypassHeader("trefolio"),
+      },
+      body: JSON.stringify({ sub }),
+      cache: "no-store",
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      console.warn("[account-deleted] trefolio notify failed", res.status);
+    }
+  } catch (err) {
+    console.warn("[account-deleted] trefolio notify error", err);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
 
 /**
  * Warren (trefolio) Telegram integration status for an IdP subject — used on `/account`.

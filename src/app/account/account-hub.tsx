@@ -14,6 +14,12 @@ function productHome(from: FromApp | undefined): string {
   return "https://trefolio.com/";
 }
 
+function afterDeleteRedirect(from: FromApp | undefined): string {
+  if (from === "clara") return "https://clara.trefolio.com/?account_deleted=1";
+  if (from === "will") return "https://will.trefolio.com/?account_deleted=1";
+  return "https://trefolio.com/login?account_deleted=1";
+}
+
 function backLabel(from: FromApp | undefined): string {
   if (from === "clara") return "Back to Clara";
   if (from === "will") return "Back to Will";
@@ -120,6 +126,12 @@ export default function AccountHub({
   const [pwdMsg, setPwdMsg] = useState("");
   const [pwdErr, setPwdErr] = useState("");
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmPhrase, setDeleteConfirmPhrase] = useState("");
+  const [deleteErr, setDeleteErr] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -194,6 +206,57 @@ export default function AccountHub({
       await load();
     } catch (e) {
       setPwdErr(e instanceof Error ? e.message : "Could not update password.");
+    }
+  }
+
+  function resetDeleteForm() {
+    setShowDeleteConfirm(false);
+    setDeletePassword("");
+    setDeleteConfirmPhrase("");
+    setDeleteErr("");
+  }
+
+  async function onDeleteAccount(e: React.FormEvent) {
+    e.preventDefault();
+    setDeleteErr("");
+    if (profile?.has_password && !deletePassword) {
+      setDeleteErr("Password is required.");
+      return;
+    }
+    if (!profile?.has_password && deleteConfirmPhrase.trim() !== "DELETE") {
+      setDeleteErr('Type DELETE to confirm.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          profile?.has_password
+            ? { password: deletePassword }
+            : { confirm: deleteConfirmPhrase.trim() },
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const code = typeof data.error === "string" ? data.error : "delete_failed";
+        if (code === "wrong_password") setDeleteErr("Incorrect password.");
+        else if (code === "password_required") setDeleteErr("Password is required.");
+        else if (code === "confirm_required") setDeleteErr('Type DELETE to confirm.');
+        else if (code === "admin_accounts_cannot_be_deleted") {
+          setDeleteErr("Admin accounts cannot be deleted from this page.");
+        } else if (code === "impersonation_forbidden") {
+          setDeleteErr("Stop impersonation before deleting an account.");
+        } else setDeleteErr("Could not delete account. Please try again.");
+        setDeleting(false);
+        return;
+      }
+      window.location.href = afterDeleteRedirect(fromApp);
+    } catch {
+      setDeleteErr("Could not delete account. Please try again.");
+      setDeleting(false);
     }
   }
 
@@ -495,6 +558,114 @@ export default function AccountHub({
 
           <section style={{ marginTop: 28, fontSize: 14 }}>
             <a href="/account/developer">Developer · MCP tokens</a>
+          </section>
+
+          <section
+            id="delete-account"
+            style={{ marginTop: 40 }}
+            className="admin-danger"
+            aria-labelledby="delete-account-heading"
+          >
+            <div
+              style={{
+                marginTop: 0,
+                padding: 20,
+                borderRadius: 12,
+                border: "1px solid var(--danger-border)",
+                background: "var(--danger-soft)",
+              }}
+            >
+              <h2 id="delete-account-heading" style={{ fontSize: 18, margin: "0 0 8px", color: "var(--danger)" }}>
+                Delete account
+              </h2>
+              <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 16px" }}>
+                Permanently delete your unified trefolio Accounts identity. Sign-in to trefolio, Clara,
+                and Will will stop working. Active subscriptions are cancelled. This cannot be undone.
+              </p>
+
+              {!showDeleteConfirm ? (
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => {
+                    setShowDeleteConfirm(true);
+                    setDeleteErr("");
+                  }}
+                >
+                  Delete my account
+                </button>
+              ) : (
+                <form onSubmit={onDeleteAccount} className="space-y-form">
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "var(--danger)", margin: 0 }}>
+                    Are you sure? This permanently erases your account data on user.trefolio.com.
+                  </p>
+                  {profile.has_password ? (
+                    <div>
+                      <label htmlFor="delete-pwd" className="label-block">
+                        Enter your password to confirm
+                      </label>
+                      <input
+                        id="delete-pwd"
+                        type="password"
+                        className="input"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        autoComplete="current-password"
+                        required
+                        autoFocus
+                        aria-invalid={deleteErr ? true : undefined}
+                        aria-describedby={deleteErr ? "delete-account-error" : undefined}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label htmlFor="delete-confirm" className="label-block">
+                        Type DELETE to confirm
+                      </label>
+                      <input
+                        id="delete-confirm"
+                        type="text"
+                        className="input"
+                        value={deleteConfirmPhrase}
+                        onChange={(e) => setDeleteConfirmPhrase(e.target.value)}
+                        autoComplete="off"
+                        required
+                        autoFocus
+                        aria-invalid={deleteErr ? true : undefined}
+                        aria-describedby={deleteErr ? "delete-account-error" : undefined}
+                      />
+                    </div>
+                  )}
+                  {deleteErr ? (
+                    <p id="delete-account-error" style={{ color: "var(--danger)", fontSize: 13 }} role="alert">
+                      {deleteErr}
+                    </p>
+                  ) : null}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    <button
+                      type="submit"
+                      className="btn btn-danger"
+                      disabled={
+                        deleting ||
+                        (profile.has_password
+                          ? !deletePassword
+                          : deleteConfirmPhrase.trim() !== "DELETE")
+                      }
+                    >
+                      {deleting ? "Deleting…" : "Yes, permanently delete"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={resetDeleteForm}
+                      disabled={deleting}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </section>
         </div>
       </main>

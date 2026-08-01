@@ -1276,6 +1276,9 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
 export async function deleteUserBySub(sub: string): Promise<void> {
   if (usePostgres) {
     await ensurePostgresSchema();
+    await getPool().query(`DELETE FROM personal_access_tokens WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM subscription_checkout_intents WHERE sub = $1`, [sub]);
+    await getPool().query(`DELETE FROM stripe_customers WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM entitlements WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM ops_telegram_link_codes WHERE sub = $1`, [sub]);
     await getPool().query(`DELETE FROM ops_telegram_links WHERE sub = $1`, [sub]);
@@ -1286,13 +1289,19 @@ export async function deleteUserBySub(sub: string): Promise<void> {
     return;
   }
   const db = getSqliteDb();
-  db.prepare(`DELETE FROM entitlements WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM ops_telegram_link_codes WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM ops_telegram_links WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM telegram_links WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM auth_codes WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM passkeys WHERE sub = ?`).run(sub);
-  db.prepare(`DELETE FROM users WHERE sub = ?`).run(sub);
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM personal_access_tokens WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM subscription_checkout_intents WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM stripe_customers WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM entitlements WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM ops_telegram_link_codes WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM ops_telegram_links WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM telegram_links WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM auth_codes WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM passkeys WHERE sub = ?`).run(sub);
+    db.prepare(`DELETE FROM users WHERE sub = ?`).run(sub);
+  });
+  tx();
 }
 
 export interface DbPasskey {
