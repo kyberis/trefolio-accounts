@@ -147,7 +147,7 @@ export default async function AdminUserDetailPage({
   const stripeRow = await getStripeCustomerBySub(user.sub);
 
   const [linksRaw, targets] = [
-    await probeProductLinks({ sub: user.sub, email: user.email, timeoutMs: 2500 }),
+    await probeProductLinks({ sub: user.sub, email: user.email, timeoutMs: 4000 }),
     getProductTargets(),
   ];
   const links = linksRaw;

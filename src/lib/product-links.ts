@@ -104,8 +104,11 @@ export async function probeProductLinks(args: {
   sub: string;
   email: string;
   signal?: AbortSignal;
-  /** Hard timeout per product call. Defaults to 1.8 s — admin lists fan
-   *  out to N users × 3 products, so we cannot afford long hangs. */
+  /** Hard timeout per product call. Defaults to 4 s — probes for the same
+   *  page run in parallel (not summed), so this only caps worst-case page
+   *  latency when a product is actually down. 1.8 s was tight enough that
+   *  an ordinary Vercel cold start on a rarely-hit product could trip it
+   *  and render a real account as falsely "not linked". */
   timeoutMs?: number;
 }): Promise<ProductLinkResult[]> {
   const token = process.env.IDP_SERVICE_TOKEN;
@@ -119,7 +122,7 @@ export async function probeProductLinks(args: {
   }
 
   const targets = getProductTargets();
-  const timeout = args.timeoutMs ?? 1800;
+  const timeout = args.timeoutMs ?? 4000;
   const params = new URLSearchParams({ email: args.email }).toString();
 
   const calls = targets.map(async (t): Promise<ProductLinkResult> => {
