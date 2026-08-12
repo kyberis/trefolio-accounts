@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 
 import { isAdminEmail } from "@/lib/admin";
+import { DELETE_CONFIRM_PHRASE } from "@/lib/account-delete";
 import { deleteUserBySub, findUserBySub } from "@/lib/db";
 import { cancelStripeSubscriptionsForAccountDeletion } from "@/lib/idp-stripe-subscription";
 import { notifyTrefolioAccountDeleted } from "@/lib/product-links";
@@ -17,9 +18,6 @@ export const dynamic = "force-dynamic";
 
 /** bcrypt only uses the first 72 bytes; keep input bounded. */
 const MAX_PASSWORD_LEN = 72;
-
-/** Typed confirmation for passwordless (Google/passkey-only) accounts. */
-export const DELETE_CONFIRM_PHRASE = "DELETE";
 
 async function sessionSub(): Promise<string | null> {
   const store = await cookies();

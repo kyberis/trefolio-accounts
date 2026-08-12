@@ -55,7 +55,8 @@ vi.mock("@/lib/session", () => ({
   }),
 }));
 
-import { DELETE_CONFIRM_PHRASE, POST } from "./route";
+import { DELETE_CONFIRM_PHRASE } from "@/lib/account-delete";
+import { POST } from "./route";
 
 function authedCookies() {
   mockCookiesGet.mockImplementation((name: string) => {

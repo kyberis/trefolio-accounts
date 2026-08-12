@@ -175,7 +175,10 @@ export async function probeProductLinks(args: {
   return Promise.all(calls);
 }
 
-const TELEGRAM_LINK_STATUS_TIMEOUT_MS = 2000;
+// 2s was too tight: a cold Next.js dev server compiles this route on the
+// first hit (observed ~2.6s), which tripped the abort and showed a false
+// "unreachable" status right after starting the dev servers / registering.
+const TELEGRAM_LINK_STATUS_TIMEOUT_MS = 6000;
 const ACCOUNT_DELETED_NOTIFY_TIMEOUT_MS = 4000;
 
 /**
