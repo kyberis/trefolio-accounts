@@ -87,9 +87,31 @@ export function getProductTargets(): ProductTarget[] {
  * alias) when `trefolio.com` is Cloudflare-proxied with Bot Fight.
  */
 export function getTrefolioServerOrigin(): string {
+  return getProductServerOrigin("trefolio");
+}
+
+/**
+ * Origin for IdP → product server-to-server calls (ops digest, linked-app
+ * probes). Public marketing hosts stay on `getProductTargets().baseUrl` for
+ * admin UI links.
+ *
+ * `trefolio.com` is Cloudflare-proxied with Bot Fight — Vercel IPs get 403
+ * HTML, so production must set `TREFOLIO_SERVER_ORIGIN` to the stable Vercel
+ * alias. Clara/Will custom domains are not CF-proxied; do **not** point
+ * `CLARA_SERVER_ORIGIN` / `WILL_SERVER_ORIGIN` at `*.vercel.app` aliases
+ * that have Deployment Protection (SSO) unless the matching bypass secret
+ * is also set on this IdP.
+ */
+export function getProductServerOrigin(app: ProductTarget["app"]): string {
+  const envName =
+    app === "trefolio"
+      ? "TREFOLIO_SERVER_ORIGIN"
+      : app === "clara"
+        ? "CLARA_SERVER_ORIGIN"
+        : "WILL_SERVER_ORIGIN";
   return (
-    trim(process.env.TREFOLIO_SERVER_ORIGIN) ||
-    getProductTargets().find((t) => t.app === "trefolio")!.baseUrl
+    trim(process.env[envName] ?? null) ||
+    getProductTargets().find((t) => t.app === app)!.baseUrl
   );
 }
 
@@ -141,7 +163,7 @@ export async function probeProductLinks(args: {
     const handle = setTimeout(() => ctrl.abort(), timeout);
     try {
       const res = await fetch(
-        `${t.baseUrl}/api/v1/users/by-sub/${encodeURIComponent(args.sub)}?${params}`,
+        `${getProductServerOrigin(t.app)}/api/v1/users/by-sub/${encodeURIComponent(args.sub)}?${params}`,
         {
           method: "GET",
           headers: {
@@ -213,7 +235,7 @@ export async function notifyTrefolioAccountDeleted(sub: string): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ACCOUNT_DELETED_NOTIFY_TIMEOUT_MS);
   try {
-    const res = await fetch(`${target.baseUrl}/api/internal/account-deleted`, {
+    const res = await fetch(`${getTrefolioServerOrigin()}/api/internal/account-deleted`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
@@ -253,7 +275,7 @@ export async function fetchTrefolioTelegramLinkStatus(sub: string): Promise<{
   const timer = setTimeout(() => ctrl.abort(), TELEGRAM_LINK_STATUS_TIMEOUT_MS);
   try {
     const res = await fetch(
-      `${target.baseUrl}/api/internal/telegram-link-status?sub=${encodeURIComponent(sub)}`,
+      `${getTrefolioServerOrigin()}/api/internal/telegram-link-status?sub=${encodeURIComponent(sub)}`,
       {
         method: "GET",
         headers: {

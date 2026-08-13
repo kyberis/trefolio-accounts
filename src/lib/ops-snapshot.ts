@@ -1,5 +1,9 @@
 import { getIdpOpsDbStats } from "./db";
-import { getProductTargets, type ProductTarget } from "./product-links";
+import {
+  getProductServerOrigin,
+  getProductTargets,
+  type ProductTarget,
+} from "./product-links";
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -23,6 +27,21 @@ function vercelBypassHeaders(app: ProductTarget["app"]): Record<string, string> 
   return { "x-vercel-protection-bypass": s };
 }
 
+function describeFetchFailure(res: Response, bodyText: string): string {
+  const loc = res.headers.get("location") || "";
+  if (res.status >= 300 && res.status < 400) {
+    if (loc.includes("/login") || loc.includes("sso-api")) {
+      return `HTTP ${res.status} auth_redirect`;
+    }
+    return `HTTP ${res.status} redirect`;
+  }
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  const looksHtml =
+    ct.includes("text/html") || bodyText.trimStart().startsWith("<");
+  if (looksHtml) return `HTTP ${res.status} html_not_json`;
+  return `HTTP ${res.status}`;
+}
+
 async function fetchProductOpsMetrics(
   target: ProductTarget,
   token: string,
@@ -30,25 +49,46 @@ async function fetchProductOpsMetrics(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${target.baseUrl}/api/internal/ops-metrics`, {
+    const origin = getProductServerOrigin(target.app);
+    const res = await fetch(`${origin}/api/internal/ops-metrics`, {
       method: "GET",
       headers: {
         authorization: `Bearer ${token}`,
+        accept: "application/json",
         ...vercelBypassHeaders(target.app),
       },
       cache: "no-store",
+      redirect: "manual",
       signal: ctrl.signal,
     });
-    if (!res.ok) {
+    const bodyText = await res.text();
+    if (!res.ok || res.status >= 300) {
       return {
         product: target.app,
         generatedAt: new Date().toISOString(),
         totals: {},
-        error: `HTTP ${res.status}`,
+        error: describeFetchFailure(res, bodyText),
       };
     }
-    const json = (await res.json()) as OpsMetricsPayload;
-    return json;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (!ct.includes("json") || bodyText.trimStart().startsWith("<")) {
+      return {
+        product: target.app,
+        generatedAt: new Date().toISOString(),
+        totals: {},
+        error: describeFetchFailure(res, bodyText),
+      };
+    }
+    try {
+      return JSON.parse(bodyText) as OpsMetricsPayload;
+    } catch {
+      return {
+        product: target.app,
+        generatedAt: new Date().toISOString(),
+        totals: {},
+        error: "invalid_json",
+      };
+    }
   } catch (err) {
     return {
       product: target.app,
