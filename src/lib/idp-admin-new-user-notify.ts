@@ -100,13 +100,17 @@ export function notifyAdminOfNewIdpUser(args: {
       if (error) {
         console.error("[idp-admin-notify] Resend error:", error.message);
       }
-      if (process.env.TELEGRAM_OPS_BOT_TOKEN?.trim()) {
-        const { telegramOpsBroadcast } = await import("./ops-telegram-send");
-        const domain = args.email.includes("@") ? args.email.split("@")[1]!.slice(0, 48) : "";
-        const tail = domain ? ` · @${domain}` : "";
-        const subShort = args.sub.length > 12 ? `${args.sub.slice(0, 12)}…` : args.sub;
-        await telegramOpsBroadcast(`IdP signup · ${subShort}${tail}`);
-      }
+      const { ingestProdOpsEvent } = await import("./trefolio-prodops");
+      const domain = args.email.includes("@") ? args.email.split("@")[1]!.slice(0, 48) : "";
+      const tail = domain ? ` · @${domain}` : "";
+      const subShort = args.sub.length > 12 ? `${args.sub.slice(0, 12)}…` : args.sub;
+      await ingestProdOpsEvent({
+        eventType: "user_registered",
+        userId: args.sub,
+        dedupeKey: `accounts:user_registered:${args.sub}`,
+        summary: `IdP signup · ${subShort}${tail}`,
+        metadata: { displayName: args.name, emailDomain: domain },
+      });
     } catch (e) {
       console.error(
         "[idp-admin-notify]",

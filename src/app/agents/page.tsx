@@ -4,10 +4,10 @@ import { cookies, headers } from "next/headers";
 import { Brand, PageFooter, AppIcon } from "@/components/Brand";
 import OpsTelegramConnectPanel from "@/components/OpsTelegramConnectPanel";
 import { getIdpOperatorUiContext, hasAdminConfigured } from "@/lib/admin";
-import { hasOpsTelegramLinkForSub } from "@/lib/db";
 import { getProductTargets } from "@/lib/product-links";
 import { getPublicIssuer } from "@/lib/public-url";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
+import { fetchProdOpsLinkStatus } from "@/lib/trefolio-prodops";
 
 export const dynamic = "force-dynamic";
 
@@ -184,7 +184,8 @@ export default async function AgentsPage() {
     );
   }
 
-  const opsLinked = await hasOpsTelegramLinkForSub(op.user.sub);
+  const opsStatus = await fetchProdOpsLinkStatus();
+  const opsLinked = opsStatus?.linked === true;
 
   return (
     <div className="page-shell">
@@ -221,8 +222,8 @@ export default async function AgentsPage() {
 
           <h1 style={{ fontSize: 22, marginBottom: 8 }}>Business ops (Telegram)</h1>
           <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 20 }}>
-            Staff-only bot for IdP signups, billing signals, and the daily digest. This is not the Warren / product
-            Telegram bot — link those from each app&apos;s profile or account hub.
+            Unified staff bot (<strong>@trefoliobot</strong>) for product alerts, IdP signups/billing,
+            and the daily digest. Same recipient as trefolio admin → ProdOps. This is not Warren.
           </p>
 
           <div
@@ -235,8 +236,12 @@ export default async function AgentsPage() {
           >
             <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>Ops agent</h2>
             <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 12px" }}>
-              Generate a one-time link and open it in Telegram (same phone) to attach this chat to your IdP
-              operator account.
+              Generate a one-time link and open it in Telegram (same phone). After linking, try{" "}
+              <code>/snapshot</code> in the bot. You can also mint the same link from trefolio{" "}
+              <a href="https://trefolio.com/admin/settings" style={{ color: "var(--emerald-strong)" }}>
+                /admin/settings
+              </a>
+              .
             </p>
             <OpsTelegramConnectPanel initialLinked={opsLinked} />
           </div>

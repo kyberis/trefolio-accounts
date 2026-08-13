@@ -16,6 +16,9 @@ function opsTelegramApiErrorMessage(data: { reason?: string; error?: string }): 
       "In DevTools → Application → Cookies for user.trefolio.com you should see idp_session after sign-in."
     );
   }
+  if (data.reason === "trefolio_link_failed" || data.reason === "trefolio_unlink_failed") {
+    return "Could not reach trefolio ProdOps right now. Retry in a moment, or generate the link from trefolio.com/admin/settings.";
+  }
   return data.reason || data.error || "Request failed";
 }
 

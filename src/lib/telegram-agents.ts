@@ -58,7 +58,7 @@ export async function buildTelegramAgentsPayload(
       id: "ops",
       title: "Business ops (staff)",
       description:
-        "Platform staff bot: IdP signups, billing signals, and daily digest. Separate from product bots above.",
+        "Platform staff bot (@trefoliobot): product alerts, IdP signups, billing, and daily digest. Same link as trefolio admin ProdOps.",
       linked: opts.opsTelegramLinked,
       has_product_account: true,
       connect_url: "",

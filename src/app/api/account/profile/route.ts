@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-import { findUserBySub, updateUserBySub, hasOpsTelegramLinkForSub } from "@/lib/db";
+import { findUserBySub, updateUserBySub } from "@/lib/db";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 import { isPlatformStaff } from "@/lib/staff";
 import { buildTelegramAgentsPayload } from "@/lib/telegram-agents";
+import { fetchProdOpsLinkStatus } from "@/lib/trefolio-prodops";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,8 @@ export async function GET() {
   if (!sub) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const opsLinked = await hasOpsTelegramLinkForSub(sub);
+  const opsStatus = await fetchProdOpsLinkStatus();
+  const opsLinked = opsStatus?.linked === true;
   const staff = isPlatformStaff(user);
   let telegram_agents: Awaited<ReturnType<typeof buildTelegramAgentsPayload>> = [];
   try {

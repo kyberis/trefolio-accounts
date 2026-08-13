@@ -82,6 +82,17 @@ export function getProductTargets(): ProductTarget[] {
   ];
 }
 
+/**
+ * Origin for IdP → trefolio server calls. Prefer `TREFOLIO_SERVER_ORIGIN` (Vercel
+ * alias) when `trefolio.com` is Cloudflare-proxied with Bot Fight.
+ */
+export function getTrefolioServerOrigin(): string {
+  return (
+    trim(process.env.TREFOLIO_SERVER_ORIGIN) ||
+    getProductTargets().find((t) => t.app === "trefolio")!.baseUrl
+  );
+}
+
 export interface ProductLinkResult {
   app: ProductTarget["app"];
   label: string;
