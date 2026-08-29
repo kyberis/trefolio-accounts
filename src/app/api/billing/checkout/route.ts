@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import type Stripe from "stripe";
 
 import {
   findUserBySub,
   getEntitlement,
   getStripeCustomerBySub,
+  setPlan,
   upsertStripeCustomerRow,
 } from "@/lib/db";
 import {
+  getConfiguredStripePrices,
   getIdpStripe,
-  getStripeProPriceId,
+  getStripePriceId,
   stripeSecretKeyMode,
 } from "@/lib/idp-stripe";
+import {
+  IDP_PLAN_RANK,
+  effectiveIdpPlan,
+  parsePaidIdpPlan,
+  planFromConfiguredPriceId,
+  resolveCheckoutAction,
+  type BillingInterval,
+  type PaidIdpPlan,
+} from "@/lib/idp-plan";
 import { getRequestPublicIssuer } from "@/lib/public-url";
 import { IDP_SESSION_COOKIE, verifySession } from "@/lib/session";
 import {
@@ -23,22 +35,38 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type Interval = "monthly" | "annual";
-
-function parseBody(raw: unknown): { interval: Interval; from: string } {
-  if (!raw || typeof raw !== "object") return { interval: "monthly", from: "clara" };
+function parseBody(raw: unknown): { interval: BillingInterval; from: string; plan: PaidIdpPlan } {
+  if (!raw || typeof raw !== "object") {
+    return { interval: "monthly", from: "clara", plan: "pro" };
+  }
   const o = raw as Record<string, unknown>;
-  const interval: Interval = o.interval === "annual" ? "annual" : "monthly";
+  const interval: BillingInterval = o.interval === "annual" ? "annual" : "monthly";
   const from =
     typeof o.from === "string" && o.from.trim()
       ? o.from.trim().slice(0, 32)
       : "clara";
-  return { interval, from };
+  return { interval, from, plan: parsePaidIdpPlan(o.plan) };
+}
+
+async function loadActiveSubscription(
+  stripe: Stripe,
+  sub: string,
+): Promise<Stripe.Subscription | null> {
+  const row = await getStripeCustomerBySub(sub);
+  if (!row?.stripe_subscription_id) return null;
+  try {
+    const existing = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
+    if (existing.status === "active" || existing.status === "trialing") return existing;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * POST /api/billing/checkout
- * Creates a Stripe Checkout Session (subscription). Requires IdP session cookie.
+ * New subscribers: Stripe Checkout Session.
+ * Existing paid subscribers upgrading: update the subscription and invoice the prorated difference.
  */
 export async function POST(req: NextRequest) {
   const inbound = req.headers;
@@ -61,7 +89,7 @@ export async function POST(req: NextRequest) {
   } catch {
     /* optional body */
   }
-  const { interval, from } = parseBody(json);
+  const { interval, from, plan } = parseBody(json);
 
   accountsAuthProbeLog(
     "billing.checkout.accepted",
@@ -69,6 +97,7 @@ export async function POST(req: NextRequest) {
       subTail: subTail(sub),
       interval,
       from,
+      plan,
       stripeKeyMode: stripeSecretKeyMode(),
       publicIssuerHost: (() => {
         try {
@@ -93,31 +122,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const ent = await getEntitlement(sub);
-  const alreadyPro =
-    ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
-  if (alreadyPro) {
-    accountsAuthProbeLog(
-      "billing.checkout.already_pro",
-      {
-        subTail: subTail(sub),
-        from,
-      },
-      inbound,
-    );
-    return NextResponse.json(
-      { error: "already_pro", message: "You already have an active Pro subscription." },
-      { status: 409 },
-    );
-  }
-
-  const priceId = getStripeProPriceId(interval);
+  const priceId = getStripePriceId(plan, interval);
   if (!priceId) {
     accountsAuthProbeWarn(
       "billing.checkout.not_configured",
       {
         subTail: subTail(sub),
         interval,
+        plan,
       },
       inbound,
     );
@@ -130,6 +142,51 @@ export async function POST(req: NextRequest) {
   try {
     const stripe = getIdpStripe();
     const origin = getRequestPublicIssuer(req);
+    const successUrl = `${origin}/upgrade?billing=success&from=${encodeURIComponent(from)}&plan=${encodeURIComponent(plan)}`;
+    const cancelUrl = `${origin}/upgrade?billing=cancelled&from=${encodeURIComponent(from)}&plan=${encodeURIComponent(plan)}`;
+
+    const activeSub = await loadActiveSubscription(stripe, sub);
+    const ent = await getEntitlement(sub);
+    const entPlan = effectiveIdpPlan(ent.plan, ent.pro_until);
+    const stripePlan = activeSub
+      ? planFromConfiguredPriceId(
+          activeSub.items?.data?.[0]?.price?.id,
+          getConfiguredStripePrices(),
+          typeof activeSub.metadata?.plan === "string" ? activeSub.metadata.plan : undefined,
+        )
+      : "free";
+    const currentPlan = IDP_PLAN_RANK[stripePlan] >= IDP_PLAN_RANK[entPlan] ? stripePlan : entPlan;
+    const decision = resolveCheckoutAction({
+      currentPlan,
+      targetPlan: plan,
+      hasActiveStripeSubscription: Boolean(activeSub),
+    });
+
+    if (decision.action === "reject") {
+      accountsAuthProbeLog(
+        "billing.checkout.rejected",
+        {
+          subTail: subTail(sub),
+          from,
+          plan,
+          currentPlan,
+          error: decision.error,
+        },
+        inbound,
+      );
+      const message =
+        decision.error === "already_on_plan"
+          ? `You already have an active ${plan} subscription.`
+          : "Use the billing portal to downgrade. Upgrades are applied on this page.";
+      return NextResponse.json(
+        {
+          error: decision.error,
+          message,
+          ...(plan === "pro" && decision.error === "already_on_plan" ? { alias: "already_pro" } : {}),
+        },
+        { status: 409 },
+      );
+    }
 
     let existing = await getStripeCustomerBySub(sub);
     let customerId = existing?.stripe_customer_id ?? null;
@@ -156,14 +213,15 @@ export async function POST(req: NextRequest) {
         const hint =
           `Stripe API key mode looks like "${mode}". ` +
           `The Price ID must exist in that same Stripe account and mode (test vs live). ` +
-          `On the trefolio-accounts Vercel project, set STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_PRO_ANNUAL ` +
-          `(or STRIPE_PRICE_ID_PRO_MONTHLY / STRIPE_PRICE_ID_PRO_ANNUAL) to prices that belong to STRIPE_SECRET_KEY.`;
+          `On the trefolio-accounts Vercel project, set STRIPE_PRICE_* for Basic / Pro / Wealth ` +
+          `to prices that belong to STRIPE_SECRET_KEY.`;
         accountsAuthProbeWarn(
           "billing.checkout.price_not_found",
           {
             subTail: subTail(sub),
             interval,
             from,
+            plan,
             priceIdSuffix: priceId.slice(-12),
             msgPreview: msg.slice(0, 200),
           },
@@ -177,12 +235,72 @@ export async function POST(req: NextRequest) {
       throw retrieveErr;
     }
 
+    if (decision.action === "prorate_update" && activeSub) {
+      const itemId = activeSub.items.data[0]?.id;
+      if (!itemId) {
+        return NextResponse.json({ error: "checkout_failed", message: "Subscription has no items." }, { status: 500 });
+      }
+
+      accountsAuthProbeLog(
+        "billing.checkout.prorate_begin",
+        {
+          subTail: subTail(sub),
+          interval,
+          from,
+          plan,
+          fromPlan: currentPlan,
+        },
+        inbound,
+      );
+
+      const updated = await stripe.subscriptions.update(activeSub.id, {
+        items: [{ id: itemId, price: priceId }],
+        proration_behavior: "always_invoice",
+        payment_behavior: "error_if_incomplete",
+        metadata: {
+          sub,
+          plan,
+          interval,
+          from,
+        },
+      });
+
+      const currentPeriodEnd = new Date(updated.current_period_end * 1000);
+      await upsertStripeCustomerRow({
+        sub,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: updated.id,
+        currentPeriodEnd,
+        cancelAtPeriodEnd: updated.cancel_at_period_end ?? false,
+      });
+      await setPlan(sub, plan, currentPeriodEnd.toISOString(), "stripe");
+
+      accountsAuthProbeLog(
+        "billing.checkout.prorate_ok",
+        {
+          subTail: subTail(sub),
+          interval,
+          plan,
+          subscriptionIdSuffix: updated.id.slice(-12),
+        },
+        inbound,
+      );
+
+      return NextResponse.json({
+        url: successUrl,
+        mode: "prorated_upgrade",
+        plan,
+        fromPlan: currentPlan,
+      });
+    }
+
     accountsAuthProbeLog(
       "billing.checkout.stripe_create_begin",
       {
         subTail: subTail(sub),
         interval,
         from,
+        plan,
         hasStripeCustomerId: Boolean(customerId),
       },
       inbound,
@@ -193,18 +311,18 @@ export async function POST(req: NextRequest) {
       customer: customerId,
       client_reference_id: sub,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}/upgrade?billing=success&from=${encodeURIComponent(from)}`,
-      cancel_url: `${origin}/upgrade?billing=cancelled&from=${encodeURIComponent(from)}`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       metadata: {
         sub,
-        plan: "pro",
+        plan,
         interval,
         from,
       },
       subscription_data: {
         metadata: {
           sub,
-          plan: "pro",
+          plan,
           interval,
           from,
         },
@@ -228,12 +346,13 @@ export async function POST(req: NextRequest) {
       {
         subTail: subTail(sub),
         interval,
+        plan,
         sessionIdSuffix: checkout.id.slice(-12),
       },
       inbound,
     );
 
-    return NextResponse.json({ url: checkout.url });
+    return NextResponse.json({ url: checkout.url, mode: "checkout", plan });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[billing/checkout]", msg);
@@ -243,6 +362,7 @@ export async function POST(req: NextRequest) {
         subTail: subTail(sub),
         interval,
         from,
+        plan,
         msgPreview: msg.slice(0, 280),
       },
       inbound,
@@ -255,7 +375,7 @@ export async function POST(req: NextRequest) {
       const hint =
         `Stripe API key mode looks like "${mode}". ` +
         `The Price ID must exist in that same Stripe account and mode (test vs live). ` +
-        `On the trefolio-accounts Vercel project, set STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_PRO_ANNUAL to prices created under the account that owns STRIPE_SECRET_KEY.`;
+        `On the trefolio-accounts Vercel project, set STRIPE_PRICE_* to prices created under the account that owns STRIPE_SECRET_KEY.`;
       return NextResponse.json(
         { error: "stripe_price_not_found", message: msg, hint },
         { status: 502 },

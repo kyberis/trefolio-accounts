@@ -1,5 +1,11 @@
 import Stripe from "stripe";
 
+import {
+  STRIPE_PRICE_ENV,
+  type BillingInterval,
+  type PaidIdpPlan,
+} from "@/lib/idp-plan";
+
 let _stripe: Stripe | null = null;
 
 /**
@@ -24,10 +30,32 @@ export function sanitizeStripeId(value: string): string {
     .replace(/^['"]+|['"]+$/g, "");
 }
 
+export function getStripePriceId(plan: PaidIdpPlan, interval: BillingInterval): string {
+  for (const envKey of STRIPE_PRICE_ENV[plan][interval]) {
+    const id = sanitizeStripeId(process.env[envKey] ?? "");
+    if (id) return id;
+  }
+  return "";
+}
+
 export function getStripeProPriceId(interval: "monthly" | "annual"): string {
-  const envKey =
-    interval === "annual" ? "STRIPE_PRICE_PRO_ANNUAL" : "STRIPE_PRICE_PRO_MONTHLY";
-  return sanitizeStripeId(process.env[envKey] ?? "");
+  return getStripePriceId("pro", interval);
+}
+
+/** All configured Price IDs, for webhook → plan mapping. */
+export function getConfiguredStripePrices(): Partial<
+  Record<PaidIdpPlan, Partial<Record<BillingInterval, string>>>
+> {
+  const out: Partial<Record<PaidIdpPlan, Partial<Record<BillingInterval, string>>>> = {};
+  for (const plan of ["basic", "pro", "wealth"] as const) {
+    for (const interval of ["monthly", "annual"] as const) {
+      const id = getStripePriceId(plan, interval);
+      if (!id) continue;
+      out[plan] ??= {};
+      out[plan]![interval] = id;
+    }
+  }
+  return out;
 }
 
 /** For operator hints only (never log full keys). */

@@ -8,6 +8,7 @@ import {
   upsertStripeCustomerRow,
 } from "@/lib/db";
 import { fetchStripeSubscriptionSnapshotForImport } from "@/lib/idp-stripe-subscription";
+import { IDP_PLAN_RANK, isPaidIdpPlan, parseIdpPlan } from "@/lib/idp-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,8 @@ export async function POST(req: NextRequest) {
   }
 
   const current = await getEntitlement(user.sub);
-  const incomingPlan = body.plan === "pro" ? "pro" : "free";
+  const currentPlan = parseIdpPlan(current.plan);
+  const incomingPlan = parseIdpPlan(body.plan);
 
   const stripeCustomerId =
     typeof body.stripeCustomerId === "string" ? body.stripeCustomerId.trim() : "";
@@ -87,25 +89,25 @@ export async function POST(req: NextRequest) {
     typeof body.stripeSubscriptionId === "string" ? body.stripeSubscriptionId.trim() : "";
 
   if (
-    body.plan === "free" &&
-    current.plan === "pro" &&
+    incomingPlan === "free" &&
+    isPaidIdpPlan(currentPlan) &&
     current.source === "stripe"
   ) {
     return NextResponse.json(
       {
         error: "stripe_managed_pro",
-        message: "Cannot downgrade Stripe-managed Pro via this import.",
+        message: "Cannot downgrade a Stripe-managed plan via this import.",
       },
       { status: 409 },
     );
   }
 
   const resolvedPlan =
-    current.plan === "pro" || incomingPlan === "pro" ? "pro" : "free";
+    IDP_PLAN_RANK[incomingPlan] >= IDP_PLAN_RANK[currentPlan] ? incomingPlan : currentPlan;
   const incomingUntil =
     body.proUntil || body.planExpiresAt ? String(body.proUntil || body.planExpiresAt) : null;
   let resolvedUntil =
-    resolvedPlan === "pro" ? maxIso(current.pro_until, incomingUntil) : null;
+    isPaidIdpPlan(resolvedPlan) ? maxIso(current.pro_until, incomingUntil) : null;
 
   let snapshot = null as Awaited<ReturnType<typeof fetchStripeSubscriptionSnapshotForImport>>;
   if (stripeCustomerId) {
@@ -113,7 +115,7 @@ export async function POST(req: NextRequest) {
       stripeCustomerId,
       stripeSubscriptionId: stripeSubscriptionId || null,
     });
-    if (snapshot?.currentPeriodEnd && resolvedPlan === "pro") {
+    if (snapshot?.currentPeriodEnd && isPaidIdpPlan(resolvedPlan)) {
       resolvedUntil = snapshot.currentPeriodEnd.toISOString();
     }
     await upsertStripeCustomerRow({

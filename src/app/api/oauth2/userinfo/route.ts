@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUserBySub, getEntitlement } from "@/lib/db";
+import { effectiveIdpPlan, entitlementClaims } from "@/lib/idp-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "invalid_token" }, { status: 401 });
   const ent = await getEntitlement(sub);
+  const tier = effectiveIdpPlan(ent.plan, ent.pro_until);
   return NextResponse.json({
     sub,
     email: user.email,
@@ -21,10 +23,6 @@ export async function GET(req: NextRequest) {
     picture: user.avatar_url?.trim() || null,
     tax_residency: user.tax_residency?.trim() || null,
     pro_until: ent.pro_until,
-    entitlements: {
-      trefolio_pro: ent.plan === "pro",
-      clara_daily_limit: ent.plan === "pro" ? 200 : 30,
-      will_daily_limit: ent.plan === "pro" ? 200 : 30,
-    },
+    entitlements: entitlementClaims(tier),
   });
 }

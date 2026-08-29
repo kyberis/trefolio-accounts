@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { listUsersForAdmin, type AdminUserRow } from "@/lib/db";
+import { isPaidIdpPlan, parseIdpPlan } from "@/lib/idp-plan";
 import { probeProductLinks, getProductTargets } from "@/lib/product-links";
 
 export const dynamic = "force-dynamic";
@@ -124,10 +125,10 @@ export default async function AdminUsersPage({
                   <td className="admin-cell-name">{u.name || "—"}</td>
                   <td className="mono">{u.sub}</td>
                   <td>
-                    <span className={`plan-chip ${u.plan === "pro" ? "plan-pro" : "plan-free"}`}>
+                    <span className={`plan-chip ${isPaidIdpPlan(parseIdpPlan(u.plan)) ? "plan-pro" : "plan-free"}`}>
                       {u.plan}
                     </span>
-                    {u.pro_until && u.plan === "pro" && (
+                    {u.pro_until && isPaidIdpPlan(parseIdpPlan(u.plan)) && (
                       <div className="cell-sub">until {fmtDate(u.pro_until)}</div>
                     )}
                   </td>

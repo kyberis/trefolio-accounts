@@ -2,7 +2,8 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 
 import { Brand } from "@/components/Brand";
-import { findUserBySub, getEntitlement } from "@/lib/db";
+import { findUserBySub, getEntitlement, getStripeCustomerBySub } from "@/lib/db";
+import { effectiveIdpPlan, parsePaidIdpPlan, type PaidIdpPlan } from "@/lib/idp-plan";
 import { getProductTargets } from "@/lib/product-links";
 import {
   getUpgradePageLeadBody,
@@ -26,6 +27,10 @@ function normalizeInterval(raw: string | undefined): "monthly" | "annual" | null
   if (v === "annual") return "annual";
   if (v === "monthly") return "monthly";
   return null;
+}
+
+function normalizePlan(raw: string | undefined): PaidIdpPlan {
+  return parsePaidIdpPlan(raw);
 }
 
 export default async function UpgradePage({
@@ -54,6 +59,9 @@ export default async function UpgradePage({
           : null;
   const skipLanding =
     typeof searchParams.skipLanding === "string" && searchParams.skipLanding === "1";
+  const targetPlan = normalizePlan(
+    typeof searchParams.plan === "string" ? searchParams.plan : undefined,
+  );
 
   const jar = await cookies();
   const sub = verifySession(jar.get(IDP_SESSION_COOKIE)?.value);
@@ -93,8 +101,9 @@ export default async function UpgradePage({
 
   const user = await findUserBySub(sub);
   const ent = await getEntitlement(sub);
-  const isPro =
-    ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
+  const currentPlan = effectiveIdpPlan(ent.plan, ent.pro_until);
+  const stripeRow = await getStripeCustomerBySub(sub);
+  const hasActiveStripe = Boolean(stripeRow?.stripe_subscription_id);
   const fromApp = parseFromApp(from);
 
   const productTargets = getProductTargets().map((t) => ({
@@ -104,7 +113,7 @@ export default async function UpgradePage({
   }));
 
   const showProductLanding =
-    FROM_ALLOWED.has(from) && !billingFlash && !skipLanding && !isPro;
+    FROM_ALLOWED.has(from) && !billingFlash && !skipLanding && currentPlan === "free";
 
   return (
     <div className="page-shell">
@@ -121,7 +130,9 @@ export default async function UpgradePage({
           </div>
           <UpgradeCheckout
             from={from}
-            initialIsPro={isPro}
+            currentPlan={currentPlan}
+            targetPlan={targetPlan}
+            hasActiveStripe={hasActiveStripe}
             billingFlash={billingFlash}
             initialInterval={intervalHint ?? undefined}
             showProductLanding={showProductLanding}

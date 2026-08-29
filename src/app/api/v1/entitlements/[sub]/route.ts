@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEntitlement, findUserBySub } from "@/lib/db";
+import { effectiveIdpPlan, entitlementClaims } from "@/lib/idp-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +21,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ sub:
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const ent = await getEntitlement(sub);
-  const isPro = ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
+  const tier = effectiveIdpPlan(ent.plan, ent.pro_until);
   return NextResponse.json({
     sub,
-    plan: ent.plan,
+    plan: tier,
     proUntil: ent.pro_until,
     source: ent.source,
     profile: {
@@ -32,10 +33,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ sub:
       picture: user.avatar_url?.trim() || null,
       taxResidency: user.tax_residency?.trim() || null,
     },
-    entitlements: {
-      trefolio_pro: isPro,
-      clara_daily_limit: isPro ? 200 : 30,
-      will_daily_limit: isPro ? 200 : 30,
-    },
+    entitlements: entitlementClaims(tier),
   });
 }

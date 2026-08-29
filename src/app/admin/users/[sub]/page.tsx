@@ -17,6 +17,7 @@ import {
 import { hasActiveManagedStripeSubscriptionIdp } from "@/lib/idp-stripe-subscription";
 import { sendIdpMembershipGrantEmail } from "@/lib/idp-membership-grant-email";
 import { impersonateUserAction } from "@/lib/idp-impersonation-actions";
+import { isPaidIdpPlan, parseIdpPlan } from "@/lib/idp-plan";
 import { getProductTargets, probeProductLinks } from "@/lib/product-links";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ async function setPlanAction(formData: FormData) {
 
   const current = await getEntitlement(sub);
   const stripeManagedPro =
-    current.plan === "pro" && current.source === "stripe";
+    isPaidIdpPlan(parseIdpPlan(current.plan)) && current.source === "stripe";
 
   if (plan === "free") {
     if (stripeManagedPro) {
@@ -143,7 +144,7 @@ export default async function AdminUserDetailPage({
   const user = await getAdminUserDetail(sub);
   if (!user) notFound();
 
-  const stripeManagedPro = user.plan === "pro" && user.source === "stripe";
+  const stripeManagedPro = isPaidIdpPlan(parseIdpPlan(user.plan)) && user.source === "stripe";
   const stripeRow = await getStripeCustomerBySub(user.sub);
 
   const [linksRaw, targets] = [
@@ -172,7 +173,7 @@ export default async function AdminUserDetailPage({
           </p>
         </div>
         <div className="admin-detail-status">
-          <span className={`plan-chip ${user.plan === "pro" ? "plan-pro" : "plan-free"}`}>
+          <span className={`plan-chip ${isPaidIdpPlan(parseIdpPlan(user.plan)) ? "plan-pro" : "plan-free"}`}>
             {user.plan}
           </span>
           {user.email_verified ? (
