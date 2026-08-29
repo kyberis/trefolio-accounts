@@ -5,6 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProductTarget } from "@/lib/product-links";
 import {
+  IDP_PLAN_RANK,
+  PLAN_PRICE_LABEL,
+  planDisplayName,
+  resolveCheckoutAction,
+  type IdpPlan,
+  type PaidIdpPlan,
+} from "@/lib/idp-plan";
+import {
   type FromApp,
   getCheckoutFootnote,
   getLandingBenefitsHeading,
@@ -21,7 +29,9 @@ export type BillingFlash = "success" | "cancelled" | "portal_return" | null;
 
 export default function UpgradeCheckout(props: {
   from: string;
-  initialIsPro: boolean;
+  currentPlan: IdpPlan;
+  targetPlan: PaidIdpPlan;
+  hasActiveStripe: boolean;
   billingFlash: BillingFlash;
   initialInterval?: "monthly" | "annual";
   showProductLanding: boolean;
@@ -29,7 +39,9 @@ export default function UpgradeCheckout(props: {
 }) {
   const {
     from,
-    initialIsPro,
+    currentPlan,
+    targetPlan,
+    hasActiveStripe,
     billingFlash,
     initialInterval,
     showProductLanding,
@@ -81,7 +93,7 @@ export default function UpgradeCheckout(props: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ interval, from }),
+        body: JSON.stringify({ interval, from, plan: targetPlan }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         url?: string;
@@ -90,8 +102,10 @@ export default function UpgradeCheckout(props: {
         hint?: string;
       };
       if (!res.ok) {
-        if (data.error === "already_pro") {
-          setError("You already have Pro — open Clara or Will to use higher limits.");
+        if (data.error === "already_pro" || data.error === "already_on_plan") {
+          setError(`You already have ${planDisplayName(targetPlan)}. Open the billing portal to manage it.`);
+        } else if (data.error === "already_on_higher_plan") {
+          setError("You are already on a higher plan. Use the billing portal to change or cancel.");
         } else if (data.hint) {
           setError(`${data.message || data.error || "Checkout failed"}\n\n${data.hint}`);
         } else {
@@ -109,7 +123,7 @@ export default function UpgradeCheckout(props: {
     } finally {
       setLoading(false);
     }
-  }, [interval, from]);
+  }, [interval, from, targetPlan]);
 
   const continueToCheckout = useCallback(() => {
     if (landingPhase) {
@@ -119,12 +133,16 @@ export default function UpgradeCheckout(props: {
   }, [landingPhase, startCheckout]);
 
   const priceLabel = useMemo(
-    () =>
-      interval === "annual"
-        ? "€59.99 / year (save vs monthly)"
-        : "€7.99 / month",
-    [interval],
+    () => PLAN_PRICE_LABEL[targetPlan][interval],
+    [interval, targetPlan],
   );
+  const checkoutDecision = resolveCheckoutAction({
+    currentPlan,
+    targetPlan,
+    hasActiveStripeSubscription: hasActiveStripe,
+  });
+  const isProratedUpgrade = checkoutDecision.action === "prorate_update";
+  const atMaxPaid = currentPlan === "wealth" && hasActiveStripe;
 
   if (billingFlash === "portal_return") {
     return (
@@ -147,22 +165,22 @@ export default function UpgradeCheckout(props: {
         case "trefolio":
           return (
             <>
-              Open <strong>trefolio</strong> and sign in with this account — your portfolio limits upgrade
-              immediately. Clara and Will pick up the same Pro tier with much higher per-day AI caps.
+              Open <strong>trefolio</strong> and sign in with this account — your plan applies immediately.
+              Clara and Will pick up the same tier and per-day AI caps.
             </>
           );
         case "clara":
           return (
             <>
-              <strong>Clara</strong> — Pro raises your per-day agent message cap versus Free; sign in with the same
+              <strong>Clara</strong> — your paid plan raises the per-day agent cap versus Free. Sign in with the same
               trefolio identity. Will and trefolio use the same subscription.
             </>
           );
         case "will":
           return (
             <>
-              <strong>Will</strong> — Pro raises your per-day AI message cap versus Free on Telegram and the web
-              journal; use the same login. Clara and trefolio use the same subscription.
+              <strong>Will</strong> — your paid plan raises the per-day AI cap versus Free on Telegram and the web
+              journal. Use the same login. Clara and trefolio use the same subscription.
             </>
           );
       }
@@ -170,8 +188,8 @@ export default function UpgradeCheckout(props: {
     return (
       <div className={`upgrade-stack ${fromCss}`} style={{ textAlign: "left" }}>
         <div className="flash flash-success" role="status">
-          <strong>Welcome to Pro.</strong> Your subscription is active. Entitlements sync automatically when you open
-          each app.
+          <strong>Welcome to {planDisplayName(targetPlan)}.</strong> Your subscription is active. Entitlements sync
+          automatically when you open each app.
         </div>
         <section style={{ marginTop: 20 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 12 }}>Where to go next</h2>
@@ -215,11 +233,28 @@ export default function UpgradeCheckout(props: {
     );
   }
 
-  if (initialIsPro) {
+  if (atMaxPaid) {
     return (
       <div className={`upgrade-stack ${fromCss}`}>
         <div className="flash flash-success" role="status">
-          Your account already has Pro. Enjoy Warren, Clara, and Will with much higher per-day AI limits than Free.
+          Your account is already on Wealth · Ultra — the highest plan.
+        </div>
+        <p className="fine-print">
+          Manage billing from your app&apos;s subscription section or open the{" "}
+          <a href={`/api/billing/portal?from=${encodeURIComponent(from)}`}>customer portal</a>.
+        </p>
+      </div>
+    );
+  }
+
+  if (checkoutDecision.action === "reject") {
+    return (
+      <div className={`upgrade-stack ${fromCss}`}>
+        <div className="flash flash-success" role="status">
+          Your account is already on {planDisplayName(currentPlan)}.
+          {IDP_PLAN_RANK.wealth > IDP_PLAN_RANK[currentPlan]
+            ? " Choose a higher plan from trefolio to upgrade."
+            : ""}
         </div>
         <p className="fine-print">
           Manage billing from your app&apos;s subscription section or open the{" "}
@@ -264,10 +299,26 @@ export default function UpgradeCheckout(props: {
         </button>
       </div>
 
-      <p className="price-tag">{priceLabel}</p>
+      <p className="price-tag">
+        {planDisplayName(targetPlan)} — {priceLabel}
+      </p>
+
+      {isProratedUpgrade ? (
+        <p className="fine-print" data-testid="proration-note">
+          You are switching from {planDisplayName(currentPlan)} to {planDisplayName(targetPlan)}.
+          Stripe charges the new price for the rest of this period and credits unused time on{" "}
+          {planDisplayName(currentPlan)} on the same invoice — not a separate cash refund.
+        </p>
+      ) : null}
 
       <button type="button" className="btn-primary-lg" disabled={loading} onClick={() => void continueToCheckout()}>
-        {loading ? "Opening Stripe…" : "Continue to secure checkout"}
+        {loading
+          ? isProratedUpgrade
+            ? "Updating subscription…"
+            : "Opening Stripe…"
+          : isProratedUpgrade
+            ? `Switch to ${planDisplayName(targetPlan)}`
+            : "Continue to secure checkout"}
       </button>
 
       {error ? (

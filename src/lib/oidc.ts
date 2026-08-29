@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getEntitlement, findUserBySub } from "./db";
+import { effectiveIdpPlan, entitlementClaims } from "./idp-plan";
 import { getPublicIssuer } from "./public-url";
 
 const KID = process.env.IDP_RS256_KID || "trefolio-idp-dev-2026";
@@ -77,7 +78,7 @@ export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs
   await loadKeys();
   const user = await findUserBySub(sub);
   const ent = await getEntitlement(sub);
-  const isPro = ent.plan === "pro" && (!ent.pro_until || new Date(ent.pro_until) > new Date());
+  const tier = effectiveIdpPlan(ent.plan, ent.pro_until);
 
   const claims: Record<string, unknown> = {
     email: user?.email ?? null,
@@ -86,11 +87,7 @@ export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs
     picture: user?.avatar_url?.trim() ? user.avatar_url.trim() : null,
     tax_residency: user?.tax_residency?.trim() ? user.tax_residency.trim() : null,
     pro_until: ent.pro_until,
-    entitlements: {
-      trefolio_pro: isPro,
-      clara_daily_limit: isPro ? 200 : 30,
-      will_daily_limit: isPro ? 200 : 30,
-    },
+    entitlements: entitlementClaims(tier),
   };
   if (nonce) claims.nonce = nonce;
 

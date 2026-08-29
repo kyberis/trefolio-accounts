@@ -21,19 +21,19 @@ const BULLETS: Record<FromApp, Bullet> = {
     id: "trefolio",
     title: "trefolio",
     body:
-      "Full portfolio tracking, broker imports, and AI insights on the web and mobile Warren apps — plus the same Pro tier on Clara and Will.",
+      "Portfolio tracking, broker imports, and AI insights on web and mobile — paid plans raise quotas here and on Clara and Will.",
   },
   clara: {
     id: "clara",
     title: "Clara",
     body:
-      "Financial agents for research and automation with a much higher per-day AI message cap on Pro than on Free — same login as trefolio and Will.",
+      "Personal-finance agents with higher per-day AI caps on paid plans than on Free — same login as trefolio and Will.",
   },
   will: {
     id: "will",
     title: "Will",
     body:
-      "Notes and AI on Telegram and the web journal with a much higher per-day message cap on Pro than on Free — same login as trefolio and Clara.",
+      "Notes and AI on Telegram and the web journal with higher per-day caps on paid plans than on Free — same login as trefolio and Clara.",
   },
 };
 
@@ -49,7 +49,7 @@ export function getUpgradeBullets(from: FromApp): Bullet[] {
 
 /** Main h1 on the upgrade page (server). */
 export function getUpgradePageTitle(): string {
-  return "Trefolio Pro";
+  return "Choose your plan";
 }
 
 /**
@@ -59,11 +59,11 @@ export function getUpgradePageTitle(): string {
 export function getUpgradePageLeadBody(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "You opened this upgrade from trefolio — one subscription unlocks Pro here and raises per-day AI caps on Clara and Will with the same account.";
+      return "You opened this from trefolio — one subscription covers Basic, Pro, or Wealth here and raises per-day AI caps on Clara and Will with the same account. Upgrading a paid plan credits unused time on the same invoice.";
     case "clara":
-      return "You opened this upgrade from Clara — one subscription unlocks much higher per-day agent limits here, Pro on trefolio, and the same higher AI caps on Will.";
+      return "You opened this from Clara — one subscription raises per-day agent limits here and on Will, and unlocks the matching trefolio plan. Upgrading a paid plan credits unused time on the same invoice.";
     case "will":
-      return "You opened this upgrade from Will — one subscription unlocks much higher per-day AI limits here, Pro on trefolio, and the same higher caps on Clara.";
+      return "You opened this from Will — one subscription raises per-day AI limits here and on Clara, and unlocks the matching trefolio plan. Upgrading a paid plan credits unused time on the same invoice.";
   }
 }
 
@@ -71,11 +71,11 @@ export function getUpgradePageLeadBody(from: FromApp): string {
 export function getLandingBenefitsHeading(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "What Pro adds for you on trefolio";
+      return "What a paid plan adds for you on trefolio";
     case "clara":
-      return "What Pro adds for you on Clara";
+      return "What a paid plan adds for you on Clara";
     case "will":
-      return "What Pro adds for you on Will";
+      return "What a paid plan adds for you on Will";
   }
 }
 
@@ -83,11 +83,11 @@ export function getLandingBenefitsHeading(from: FromApp): string {
 export function getLandingBenefitsSub(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "One checkout covers the whole bundle: Warren, Clara, and Will share Pro entitlements and higher per-day AI message caps on the assistants.";
+      return "One checkout covers the whole bundle. Warren, Clara, and Will share the plan you pick and higher per-day AI caps on the assistants. Switching paid plans credits unused time on the same invoice.";
     case "clara":
-      return "Clara is first — the same subscription covers Warren and Will with no extra checkout, including higher per-day AI caps on both assistants.";
+      return "Clara is first — the same subscription covers Warren and Will with no extra checkout, including higher per-day AI caps on both assistants. Switching paid plans credits unused time on the same invoice.";
     case "will":
-      return "Will is first — the same subscription covers Warren and Clara with no extra checkout, including higher per-day AI caps on both assistants.";
+      return "Will is first — the same subscription covers Warren and Clara with no extra checkout, including higher per-day AI caps on both assistants. Switching paid plans credits unused time on the same invoice.";
   }
 }
 
@@ -95,11 +95,11 @@ export function getLandingBenefitsSub(from: FromApp): string {
 export function getCheckoutFootnote(from: FromApp): string {
   switch (from) {
     case "trefolio":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. Clara and Will pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. Clara and Will pick up the same plan automatically (fair use may apply).";
     case "clara":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Will pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Will pick up the same plan automatically (fair use may apply).";
     case "will":
-      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Clara pick up Pro automatically with higher per-day AI caps than Free (fair use may apply).";
+      return "Billing runs on your trefolio account at user.trefolio.com; Stripe emails the receipt. trefolio and Clara pick up the same plan automatically (fair use may apply).";
   }
 }
 

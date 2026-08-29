@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { Pool } from "pg";
 
+import { parseIdpPlan, type IdpPlan } from "@/lib/idp-plan";
 import { normalizeIdpLocale } from "@/lib/i18n/idp-locale";
 import {
   inferIdpSignupAuthProvider,
@@ -85,7 +86,7 @@ export interface SeedUserRow {
   sub: string;
   email: string;
   name: string | null;
-  plan: "free" | "pro" | null;
+  plan: IdpPlan | null;
   pro_until: string | null;
 }
 
@@ -93,7 +94,7 @@ export interface AdminUserRow {
   sub: string;
   email: string;
   name: string;
-  plan: "free" | "pro";
+  plan: IdpPlan;
   pro_until: string | null;
   source: string | null;
   google_id: string | null;
@@ -498,7 +499,7 @@ export async function listUsersWithEntitlements(): Promise<SeedUserRow[]> {
       sub: String(row.sub),
       email: String(row.email),
       name: row.name ?? null,
-      plan: (row.plan as "free" | "pro" | null) ?? null,
+      plan: row.plan == null ? null : parseIdpPlan(row.plan),
       pro_until: toIsoString(row.pro_until),
     }));
   }
@@ -515,7 +516,7 @@ export async function listUsersWithEntitlements(): Promise<SeedUserRow[]> {
     sub: String(row.sub),
     email: String(row.email),
     name: row.name ?? null,
-    plan: (row.plan as "free" | "pro" | null) ?? null,
+    plan: row.plan == null ? null : parseIdpPlan(row.plan),
     pro_until: toIsoString(row.pro_until),
   }));
 }
@@ -612,7 +613,7 @@ export async function getEntitlement(
 
 export async function setPlan(
   sub: string,
-  plan: "free" | "pro",
+  plan: IdpPlan,
   proUntilIso: string | null,
   source: string = "dev-toggle",
 ): Promise<void> {
@@ -1130,7 +1131,7 @@ export async function listUsersForAdmin(args: {
         sub: String(row.sub),
         email: String(row.email),
         name: String(row.name ?? ""),
-        plan: row.plan === "pro" ? "pro" : "free",
+        plan: parseIdpPlan(row.plan),
         pro_until: toIsoString(row.pro_until),
         source: row.source ?? null,
         google_id: row.google_id ?? null,
@@ -1174,7 +1175,7 @@ export async function listUsersForAdmin(args: {
       sub: String(row.sub),
       email: String(row.email),
       name: String(row.name ?? ""),
-      plan: row.plan === "pro" ? "pro" : "free",
+      plan: parseIdpPlan(row.plan),
       pro_until: toIsoString(row.pro_until),
       source: row.source ?? null,
       google_id: row.google_id ?? null,
@@ -1219,7 +1220,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       sub: String(row.sub),
       email: String(row.email),
       name: String(row.name ?? ""),
-      plan: row.plan === "pro" ? "pro" : "free",
+      plan: parseIdpPlan(row.plan),
       pro_until: toIsoString(row.pro_until),
       source: row.source ?? null,
       google_id: row.google_id ?? null,
@@ -1257,7 +1258,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     sub: String(row.sub),
     email: String(row.email),
     name: String(row.name ?? ""),
-    plan: row.plan === "pro" ? "pro" : "free",
+    plan: parseIdpPlan(row.plan),
     pro_until: toIsoString(row.pro_until),
     source: row.source ?? null,
     google_id: row.google_id ?? null,

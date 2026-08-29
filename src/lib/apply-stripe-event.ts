@@ -4,14 +4,21 @@ import {
   setPlan,
   upsertStripeCustomerRow,
 } from "@/lib/db";
-import { getIdpStripe } from "@/lib/idp-stripe";
+import { getConfiguredStripePrices, getIdpStripe } from "@/lib/idp-stripe";
 import { notifyOpsTelegramBillingLine } from "@/lib/ops-telegram-billing-notify";
+import { planFromConfiguredPriceId, type IdpPlan } from "@/lib/idp-plan";
 
 function readMetadataSub(session: Stripe.Checkout.Session): string | null {
   const m = session.metadata ?? {};
   /** Only canonical IdP `sub` — never treat product-local `userId` as `sub`. */
   const sub = (m.sub || m.idp_sub || "").trim();
   return sub || null;
+}
+
+export function planFromStripeSubscription(stripeSub: Stripe.Subscription): IdpPlan {
+  const priceId = stripeSub.items?.data?.[0]?.price?.id;
+  const metaPlan = typeof stripeSub.metadata?.plan === "string" ? stripeSub.metadata.plan : undefined;
+  return planFromConfiguredPriceId(priceId, getConfiguredStripePrices(), metaPlan);
 }
 
 /**
@@ -36,6 +43,13 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
       const stripe = getIdpStripe();
       const subObj = await stripe.subscriptions.retrieve(subscriptionId);
       const currentPeriodEnd = new Date(subObj.current_period_end * 1000);
+      const metaPlan = typeof session.metadata?.plan === "string" ? session.metadata.plan : undefined;
+      const plan = planFromConfiguredPriceId(
+        subObj.items?.data?.[0]?.price?.id,
+        getConfiguredStripePrices(),
+        metaPlan,
+      );
+      const stored = plan === "free" ? "pro" : plan;
 
       await upsertStripeCustomerRow({
         sub,
@@ -45,8 +59,8 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
         cancelAtPeriodEnd: subObj.cancel_at_period_end ?? false,
       });
 
-      await setPlan(sub, "pro", currentPeriodEnd.toISOString(), "stripe");
-      notifyOpsTelegramBillingLine("checkout_completed → pro", sub);
+      await setPlan(sub, stored, currentPeriodEnd.toISOString(), "stripe");
+      notifyOpsTelegramBillingLine(`checkout_completed → ${stored}`, sub);
       return;
     }
 
@@ -63,6 +77,8 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
 
       const isActive = stripeSub.status === "active" || stripeSub.status === "trialing";
       const currentPeriodEnd = new Date(stripeSub.current_period_end * 1000);
+      const plan = planFromStripeSubscription(stripeSub);
+      const stored = isActive ? (plan === "free" ? "pro" : plan) : "free";
 
       await upsertStripeCustomerRow({
         sub: mappedSub,
@@ -72,9 +88,9 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
         cancelAtPeriodEnd: stripeSub.cancel_at_period_end ?? false,
       });
 
-      await setPlan(mappedSub, isActive ? "pro" : "free", isActive ? currentPeriodEnd.toISOString() : null, "stripe");
+      await setPlan(mappedSub, stored, isActive ? currentPeriodEnd.toISOString() : null, "stripe");
       notifyOpsTelegramBillingLine(
-        isActive ? `subscription_${stripeSub.status}` : "subscription_inactive",
+        isActive ? `subscription_${stripeSub.status} → ${stored}` : "subscription_inactive",
         mappedSub,
       );
       return;
@@ -91,8 +107,10 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<void> {
         ? new Date(stripeSub.current_period_end * 1000)
         : null;
       const stillInPeriod = cpe ? cpe.getTime() > Date.now() : false;
+      const plan = planFromStripeSubscription(stripeSub);
+      const stored = stillInPeriod ? (plan === "free" ? "pro" : plan) : "free";
 
-      await setPlan(mappedSub, stillInPeriod ? "pro" : "free", stillInPeriod ? cpe!.toISOString() : null, "stripe");
+      await setPlan(mappedSub, stored, stillInPeriod ? cpe!.toISOString() : null, "stripe");
       notifyOpsTelegramBillingLine("subscription_deleted", mappedSub);
       return;
     }
