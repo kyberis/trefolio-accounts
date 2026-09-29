@@ -9,6 +9,7 @@ import {
   inferIdpSignupAuthProvider,
   notifyAdminOfNewIdpUser,
 } from "@/lib/idp-admin-new-user-notify";
+import { registrationApprovedAtForCreate } from "@/lib/registration-approval";
 
 const postgresUrl = process.env.DATABASE_URL ?? "";
 const usePostgres =
@@ -80,6 +81,8 @@ export interface DbUser {
    * IdP env admins (`IDP_ADMIN_EMAILS`) are always treated as staff for linking.
    */
   is_staff: number;
+  /** ISO timestamp when an operator approved this signup. Null = pending. */
+  registration_approved_at: string | null;
 }
 
 export interface SeedUserRow {
@@ -111,6 +114,7 @@ export interface AdminUserRow {
   membership_grant_pending: boolean;
   membership_grant_days: number | null;
   membership_grant_created_at: string | null;
+  registration_approved_at: string | null;
 }
 
 export interface AdminUserListResult {
@@ -134,6 +138,7 @@ function sqliteRowToUser(row: any): DbUser {
     avatar_url: String(row.avatar_url ?? ""),
     tax_residency: String(row.tax_residency ?? ""),
     is_staff: Number(row.is_staff ?? 0) ? 1 : 0,
+    registration_approved_at: toIsoString(row.registration_approved_at),
   };
 }
 
@@ -151,6 +156,7 @@ function pgRowToUser(row: any): DbUser {
     avatar_url: String(row.avatar_url ?? ""),
     tax_residency: String(row.tax_residency ?? ""),
     is_staff: row.is_staff ? 1 : 0,
+    registration_approved_at: toIsoString(row.registration_approved_at),
   };
 }
 
@@ -287,6 +293,32 @@ async function ensurePostgresSchema(): Promise<void> {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_residency TEXT NOT NULL DEFAULT '';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_staff BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS registration_approved_at TIMESTAMPTZ;
+        CREATE TABLE IF NOT EXISTS idp_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        INSERT INTO idp_meta (key, value)
+        SELECT 'registration_approved_backfill', '1'
+        WHERE NOT EXISTS (SELECT 1 FROM idp_meta WHERE key = 'registration_approved_backfill');
+      `);
+      await client.query(`
+        UPDATE users
+           SET registration_approved_at = COALESCE(created_at, NOW())
+         WHERE registration_approved_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM idp_meta
+              WHERE key = 'registration_approved_backfill'
+                AND value = '1'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM idp_meta
+              WHERE key = 'registration_approved_backfill_done'
+                AND value = '1'
+           );
+        INSERT INTO idp_meta (key, value)
+        VALUES ('registration_approved_backfill_done', '1')
+        ON CONFLICT (key) DO NOTHING;
       `);
     } finally {
       client.release();
@@ -429,6 +461,25 @@ function getSqliteDb(): Database.Database {
   safeAlter(db, `ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN tax_residency TEXT NOT NULL DEFAULT ''`);
   safeAlter(db, `ALTER TABLE users ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 0`);
+  safeAlter(db, `ALTER TABLE users ADD COLUMN registration_approved_at TEXT`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS idp_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+  const approvalBackfillDone = db
+    .prepare(`SELECT value FROM idp_meta WHERE key = 'registration_approved_backfill_done'`)
+    .get() as { value?: string } | undefined;
+  if (!approvalBackfillDone?.value) {
+    db.exec(
+      `UPDATE users SET registration_approved_at = COALESCE(created_at, datetime('now'))
+        WHERE registration_approved_at IS NULL OR registration_approved_at = ''`,
+    );
+    db.prepare(
+      `INSERT OR IGNORE INTO idp_meta (key, value) VALUES ('registration_approved_backfill_done', '1')`,
+    ).run();
+  }
   safeAlter(db, `ALTER TABLE personal_access_tokens ADD COLUMN scopes_json TEXT`);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`,
@@ -526,7 +577,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE lower(email) = $1`,
       [normalized],
     );
@@ -535,7 +586,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE lower(email) = ?`,
     )
     .get(normalized) as any;
@@ -546,7 +597,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE google_id = $1`,
       [googleId],
     );
@@ -554,7 +605,7 @@ export async function findUserByGoogleId(googleId: string): Promise<DbUser | nul
   }
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE google_id = ?`,
     )
     .get(googleId) as any;
@@ -565,7 +616,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
   if (usePostgres) {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE sub = $1`,
       [sub],
     );
@@ -574,7 +625,7 @@ export async function findUserBySub(sub: string): Promise<DbUser | null> {
 
   const row = getSqliteDb()
     .prepare(
-      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
+      `SELECT sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
        FROM users WHERE sub = ?`,
     )
     .get(sub) as any;
@@ -657,6 +708,7 @@ export async function createUser(args: {
   const locale = normalizeIdpLocale(args.locale);
   const avatarUrl = args.avatarUrl ?? "";
   const taxResidency = args.taxResidency ?? "";
+  const approvedAt = registrationApprovedAtForCreate();
 
   let created: DbUser;
 
@@ -664,9 +716,9 @@ export async function createUser(args: {
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at`,
       [
         sub,
         email,
@@ -680,6 +732,7 @@ export async function createUser(args: {
         args.avatarUrl ?? "",
         args.taxResidency ?? "",
         false,
+        approvedAt,
       ],
     );
     await getPool().query(
@@ -692,8 +745,8 @@ export async function createUser(args: {
     getSqliteDb()
       .prepare(
         `INSERT INTO users (
-        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sub, email, name, password_plain, password_hash, google_id, apple_id, email_verified, locale, avatar_url, tax_residency, is_staff, registration_approved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sub,
@@ -708,6 +761,7 @@ export async function createUser(args: {
         avatarUrl,
         taxResidency,
         0,
+        approvedAt,
       );
     getSqliteDb().prepare(`INSERT INTO entitlements (sub, plan) VALUES (?, 'free')`).run(sub);
     created = {
@@ -723,6 +777,7 @@ export async function createUser(args: {
       avatar_url: avatarUrl,
       tax_residency: taxResidency,
       is_staff: 0,
+      registration_approved_at: approvedAt,
     };
   }
 
@@ -731,9 +786,43 @@ export async function createUser(args: {
     email: created.email,
     name: created.name,
     authProvider: inferIdpSignupAuthProvider(args),
+    needsApproval: !created.registration_approved_at,
   });
 
   return created;
+}
+
+/**
+ * Idempotent operator approval. Returns whether the row was newly approved.
+ */
+export async function approveRegistration(sub: string): Promise<{
+  approved: boolean;
+  alreadyApproved: boolean;
+  user: DbUser | null;
+}> {
+  const user = await findUserBySub(sub);
+  if (!user) return { approved: false, alreadyApproved: false, user: null };
+  if (user.registration_approved_at) {
+    return { approved: true, alreadyApproved: true, user };
+  }
+  const now = new Date().toISOString();
+  if (usePostgres) {
+    await ensurePostgresSchema();
+    await getPool().query(
+      `UPDATE users SET registration_approved_at = $1
+        WHERE sub = $2 AND registration_approved_at IS NULL`,
+      [now, sub],
+    );
+  } else {
+    getSqliteDb()
+      .prepare(
+        `UPDATE users SET registration_approved_at = ?
+          WHERE sub = ? AND (registration_approved_at IS NULL OR registration_approved_at = '')`,
+      )
+      .run(now, sub);
+  }
+  const refreshed = await findUserBySub(sub);
+  return { approved: true, alreadyApproved: false, user: refreshed };
 }
 
 export async function updateUserBySub(
@@ -751,6 +840,7 @@ export async function updateUserBySub(
       | "avatar_url"
       | "tax_residency"
       | "is_staff"
+      | "registration_approved_at"
     >
   >,
 ): Promise<void> {
@@ -797,6 +887,10 @@ export async function updateUserBySub(
     if (patch.is_staff !== undefined) {
       values.push(Boolean(patch.is_staff));
       sets.push(`is_staff = $${values.length}`);
+    }
+    if (patch.registration_approved_at !== undefined) {
+      values.push(patch.registration_approved_at);
+      sets.push(`registration_approved_at = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(sub);
@@ -848,6 +942,10 @@ export async function updateUserBySub(
   if (patch.is_staff !== undefined) {
     sets.push("is_staff = ?");
     args.push(patch.is_staff ? 1 : 0);
+  }
+  if (patch.registration_approved_at !== undefined) {
+    sets.push("registration_approved_at = ?");
+    args.push(patch.registration_approved_at);
   }
   if (sets.length === 0) return;
   args.push(sub);
@@ -1112,6 +1210,7 @@ export async function listUsersForAdmin(args: {
     const offsetIdx = params.length + 2;
     const list = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              u.registration_approved_at,
               COALESCE(u.is_staff, false) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
@@ -1144,6 +1243,7 @@ export async function listUsersForAdmin(args: {
         membership_grant_pending: false,
         membership_grant_days: null,
         membership_grant_created_at: null,
+        registration_approved_at: toIsoString(row.registration_approved_at),
       })),
       total: Number(count.rows[0]?.n ?? 0),
       page,
@@ -1157,6 +1257,7 @@ export async function listUsersForAdmin(args: {
   const rows = db
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              u.registration_approved_at,
               COALESCE(u.is_staff, 0) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
@@ -1188,6 +1289,7 @@ export async function listUsersForAdmin(args: {
       membership_grant_pending: false,
       membership_grant_days: null,
       membership_grant_created_at: null,
+      registration_approved_at: toIsoString(row.registration_approved_at),
     })),
     total: Number(total),
     page,
@@ -1200,6 +1302,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     await ensurePostgresSchema();
     const { rows } = await getPool().query(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              u.registration_approved_at,
               COALESCE(u.is_staff, false) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0)::bigint AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0)::bigint AS idp_auth_failures,
@@ -1233,12 +1336,14 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
       membership_grant_pending: pending,
       membership_grant_days: pending ? Number(row.membership_grant_days ?? 0) || null : null,
       membership_grant_created_at: pending ? toIsoString(row.membership_grant_created_at) : null,
+      registration_approved_at: toIsoString(row.registration_approved_at),
     };
   }
 
   const row = getSqliteDb()
     .prepare(
       `SELECT u.sub, u.email, u.name, u.google_id, u.apple_id, u.email_verified, u.created_at,
+              u.registration_approved_at,
               COALESCE(u.is_staff, 0) AS is_staff,
               COALESCE(u.idp_auth_attempts, 0) AS idp_auth_attempts,
               COALESCE(u.idp_auth_failures, 0) AS idp_auth_failures,
@@ -1271,6 +1376,7 @@ export async function getAdminUserDetail(sub: string): Promise<AdminUserRow | nu
     membership_grant_pending: pending,
     membership_grant_days: pending ? Number(row.membership_grant_days ?? 0) || null : null,
     membership_grant_created_at: pending ? toIsoString(row.membership_grant_created_at) : null,
+    registration_approved_at: toIsoString(row.registration_approved_at),
   };
 }
 

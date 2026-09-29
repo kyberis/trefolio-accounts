@@ -47,6 +47,11 @@ export async function POST(req: NextRequest) {
       taxResidency: body.taxResidency ? String(body.taxResidency) : undefined,
     });
     created = true;
+    // Imports are existing product users — approve so they are not locked out.
+    await updateUserBySub(user.sub, {
+      registration_approved_at: new Date().toISOString(),
+    });
+    user = { ...user, registration_approved_at: new Date().toISOString() };
   } else {
     // Merge source apps into one canonical IdP identity keyed by email.
     await updateUserBySub(user.sub, {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUserBySub, getEntitlement } from "@/lib/db";
+import { isRegistrationApproved } from "@/lib/registration-approval";
 import { effectiveIdpPlan, entitlementClaims } from "@/lib/idp-plan";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest) {
   const sub = token.split(".").pop() || "";
   const user = await findUserBySub(sub);
   if (!user) return NextResponse.json({ error: "invalid_token" }, { status: 401 });
+  if (!isRegistrationApproved(user)) {
+    return NextResponse.json({ error: "registration_pending" }, { status: 403 });
+  }
   const ent = await getEntitlement(sub);
   const tier = effectiveIdpPlan(ent.plan, ent.pro_until);
   return NextResponse.json({
@@ -24,5 +28,6 @@ export async function GET(req: NextRequest) {
     tax_residency: user.tax_residency?.trim() || null,
     pro_until: ent.pro_until,
     entitlements: entitlementClaims(tier),
+    registration_approved: isRegistrationApproved(user),
   });
 }

@@ -8,10 +8,12 @@ import { findClient, verifyPkce, buildIdToken } from "@/lib/oidc";
 import {
   consumeAuthCode,
   findMatchingOAuthTokenReplay,
+  findUserBySub,
   hashPkceVerifier,
   saveOAuthTokenReplay,
   type ConsumeAuthCodeResult,
 } from "@/lib/db";
+import { isRegistrationApproved } from "@/lib/registration-approval";
 import { getPublicIssuer } from "@/lib/public-url";
 import { randomBytes } from "node:crypto";
 
@@ -240,6 +242,19 @@ export async function POST(req: NextRequest) {
       inbound,
     );
     return NextResponse.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, { status: 400 });
+  }
+
+  const tokenUser = await findUserBySub(stored.sub);
+  if (!tokenUser || !isRegistrationApproved(tokenUser)) {
+    accountsAuthProbeWarn(
+      "oauth2.token.registration_pending",
+      { subTail: subTail(stored.sub), clientIdTail: clientIdTail(clientId) },
+      inbound,
+    );
+    return NextResponse.json(
+      { error: "access_denied", error_description: "registration_pending" },
+      { status: 403 },
+    );
   }
 
   // Must match `issuer` in `/.well-known/openid-configuration` (see that route).
