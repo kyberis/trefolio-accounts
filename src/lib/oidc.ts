@@ -88,6 +88,7 @@ export async function buildIdToken({ sub, aud, nonce, issuer }: BuildIdTokenArgs
     tax_residency: user?.tax_residency?.trim() ? user.tax_residency.trim() : null,
     pro_until: ent.pro_until,
     entitlements: entitlementClaims(tier),
+    registration_approved: Boolean(user?.registration_approved_at),
   };
   if (nonce) claims.nonce = nonce;
 

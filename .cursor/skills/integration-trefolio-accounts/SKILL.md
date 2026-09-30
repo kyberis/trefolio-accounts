@@ -31,7 +31,8 @@ From this skill’s directory (`.cursor/skills/integration-trefolio-accounts/` i
 | [`src/app/oauth2/authorize/page.tsx`](../../../src/app/oauth2/authorize/page.tsx) | Login + signup UI; `app_hint`, `screen_hint`, `signup`, `prompt=login` |
 | [`src/app/api/oauth2/token/route.ts`](../../../src/app/api/oauth2/token/route.ts) | Token endpoint (code exchange) |
 | [`src/lib/oidc.ts`](../../../src/lib/oidc.ts) | Client registry, auth codes |
-| [`src/lib/db.ts`](../../../src/lib/db.ts) | Users, entitlements, Telegram links |
+| [`src/lib/db.ts`](../../../src/lib/db.ts) | Users, entitlements, Telegram links, `registration_approved_at` |
+| [`src/lib/registration-approval.ts`](../../../src/lib/registration-approval.ts) | Signup approval JWT + env gate |
 | [`src/lib/oidc-pending.ts`](../../../src/lib/oidc-pending.ts) | Google/passkey side-trip cookie |
 | [`src/lib/idp-email-policy.ts`](../../../src/lib/idp-email-policy.ts) | Future verification-mail gating |
 | [`README.md`](../../../README.md) | Local setup, issuer vs `IDP_BASE_URL` |

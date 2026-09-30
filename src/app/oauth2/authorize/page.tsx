@@ -43,6 +43,7 @@ import {
   verifySession,
 } from "@/lib/session";
 import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
+import { isRegistrationApproved } from "@/lib/registration-approval";
 import {
   accountsAuthProbeLog,
   accountsAuthProbeWarn,
@@ -371,6 +372,24 @@ async function handleSubmit(formData: FormData) {
     redirect(`/account/check-email?e=${encodeURIComponent(email)}`);
   }
 
+  if (!isRegistrationApproved(user)) {
+    const cookieStore = await cookies();
+    const attrs = sessionCookieAttributes();
+    cookieStore.set(attrs.name, signSession(user.sub), {
+      httpOnly: attrs.httpOnly,
+      sameSite: attrs.sameSite,
+      path: attrs.path,
+      maxAge: attrs.maxAge,
+      secure: attrs.secure,
+    });
+    accountsAuthProbeLog(
+      "authorize.registration_pending",
+      { subTail: subTail(user.sub), intent },
+      inbound,
+    );
+    redirect("/pending-approval");
+  }
+
   const code = newAuthCode();
   await saveAuthCode({
     code,
@@ -441,6 +460,9 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
     if (sub) {
       const user = await findUserBySub(sub);
       if (user && user.email_verified === 1) {
+        if (!isRegistrationApproved(user)) {
+          redirect("/pending-approval");
+        }
         const code = newAuthCode();
         await saveAuthCode({
           code,

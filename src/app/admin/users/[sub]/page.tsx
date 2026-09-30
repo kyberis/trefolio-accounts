@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getIdpAdmin } from "@/lib/admin";
 import {
   deleteUserBySub,
+  approveRegistration,
   findUserBySub,
   getAdminUserDetail,
   getEntitlement,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/db";
 import { hasActiveManagedStripeSubscriptionIdp } from "@/lib/idp-stripe-subscription";
 import { sendIdpMembershipGrantEmail } from "@/lib/idp-membership-grant-email";
+import { sendRegistrationApprovedEmail } from "@/lib/idp-registration-approved-email";
 import { impersonateUserAction } from "@/lib/idp-impersonation-actions";
 import { isPaidIdpPlan, parseIdpPlan } from "@/lib/idp-plan";
 import { getProductTargets, probeProductLinks } from "@/lib/product-links";
@@ -71,6 +73,24 @@ async function resetPasswordAction(formData: FormData) {
   const hash = await bcrypt.hash(password, 12);
   await updateUserBySub(sub, { password_hash: hash, password_plain: "" });
   revalidatePath(`/admin/users/${sub}`);
+}
+
+async function approveRegistrationAction(formData: FormData) {
+  "use server";
+  const ctx = await getIdpAdmin();
+  if (!ctx) return;
+  const sub = String(formData.get("sub") || "");
+  if (!sub) return;
+  const result = await approveRegistration(sub);
+  if (result.user && !result.alreadyApproved) {
+    await sendRegistrationApprovedEmail({
+      email: result.user.email,
+      name: result.user.name,
+      locale: result.user.locale,
+    });
+  }
+  revalidatePath(`/admin/users/${sub}`);
+  revalidatePath("/admin/users");
 }
 
 async function setEmailVerifiedAction(formData: FormData) {
@@ -180,6 +200,11 @@ export default async function AdminUserDetailPage({
             <span className="badge badge-ok">verified</span>
           ) : (
             <span className="badge badge-warn">unverified</span>
+          )}
+          {user.registration_approved_at ? (
+            <span className="badge badge-ok">approved</span>
+          ) : (
+            <span className="badge badge-warn">pending approval</span>
           )}
           {user.google_id && <span className="badge">google</span>}
           {user.apple_id && <span className="badge">apple</span>}
@@ -478,6 +503,24 @@ export default async function AdminUserDetailPage({
               Set password
             </button>
           </form>
+        </article>
+
+        <article className="card">
+          <h2 className="card-title">Registration approval</h2>
+          <p className="card-subtitle">
+            New signups stay pending until an operator approves them. Approving
+            unlocks OIDC for trefolio, Clara, and Will and emails the user.
+          </p>
+          {user.registration_approved_at ? (
+            <p>Approved {fmtDateTime(user.registration_approved_at)}</p>
+          ) : (
+            <form action={approveRegistrationAction} className="form-stack">
+              <input type="hidden" name="sub" value={user.sub} />
+              <button type="submit" className="btn btn-primary">
+                Approve account
+              </button>
+            </form>
+          )}
         </article>
 
         <article className="card">

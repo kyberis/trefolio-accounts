@@ -20,6 +20,7 @@ import {
   signSession,
 } from "@/lib/session";
 import { isBlockedEmailDomain } from "@/lib/blocked-email-domains";
+import { isRegistrationApproved } from "@/lib/registration-approval";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,13 @@ export async function GET(req: NextRequest) {
         locale: normalizeIdpLocale(pending.ui_locale),
       });
     }
+  }
+
+  if (!isRegistrationApproved(user)) {
+    const res = NextResponse.redirect(absoluteRedirectUrl(req, "/pending-approval"));
+    setSessionCookie(res, user.sub);
+    clearPendingCookie(res);
+    return res;
   }
 
   // Resolve final redirect target.

@@ -120,6 +120,11 @@ export default async function AdminUsersPage({
                           unverified
                         </span>
                       )}
+                      {!u.registration_approved_at && (
+                        <span className="badge badge-warn" title="Waiting for operator approval">
+                          pending
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="admin-cell-name">{u.name || "—"}</td>

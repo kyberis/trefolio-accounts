@@ -16,6 +16,7 @@ import {
   signSession,
 } from "@/lib/session";
 import { getWebAuthnConfig } from "@/lib/webauthn";
+import { isRegistrationApproved } from "@/lib/registration-approval";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,14 @@ export async function POST(req: NextRequest) {
     // responses are not reliably serialized on some serverless runtimes (no idp_session).
     res.cookies.set(sessionAttrs.name, sessionPayload, { ...cookieOpts });
     return res;
+  }
+
+  if (!isRegistrationApproved(user)) {
+    return withIdpSession({
+      ok: true as const,
+      pendingApproval: true,
+      redirectTo: "/pending-approval",
+    });
   }
 
   // OIDC continuation branch.
